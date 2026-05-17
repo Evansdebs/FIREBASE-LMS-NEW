@@ -26,11 +26,11 @@ services:
         sync: false # You will be prompted to enter your frontend URL in the Render dashboard
 
   # ─── FRONTEND STATIC SITE ──────────────────────────────
-  - type: static
+  - type: web
     name: onereal-lms-frontend
-    env: static
+    runtime: static
     buildCommand: npm run build
-    publishDir: dist
+    staticPublishPath: dist
     routes:
       - source: /*
         destination: /index.html
