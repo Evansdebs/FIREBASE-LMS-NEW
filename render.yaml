@@ -34,9 +34,7 @@ services:
     routes:
       - source: /*
         destination: /index.html
+        type: rewrite
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: onereal-lms-backend
-          property: url
+        sync: false # You will be prompted to enter your backend URL in the Render dashboard
