@@ -23,10 +23,7 @@ services:
       - key: GOOGLE_AI_KEY
         sync: false # You will be prompted to enter this in the Render dashboard
       - key: FRONTEND_URL
-        fromService:
-          type: static
-          name: onereal-lms-frontend
-          property: url
+        sync: false # You will be prompted to enter your frontend URL in the Render dashboard
 
   # ─── FRONTEND STATIC SITE ──────────────────────────────
   - type: static
