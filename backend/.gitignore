@@ -1,0 +1,50 @@
+# ─── Dependencies ───────────────────────────────────────
+node_modules/
+
+# ─── Environment & Secrets ──────────────────────────────
+# NEVER commit these — they contain passwords and JWT secrets
+.env
+.env.local
+.env.production
+
+# ─── Database ───────────────────────────────────────────
+# SQLite database file (contains all app data)
+prisma/dev.db
+prisma/dev.db-journal
+prisma/*.db
+prisma/*.db-shm
+prisma/*.db-wal
+
+# Keep migrations folder but ignore generated client
+!prisma/migrations/
+
+# ─── Prisma generated client ────────────────────────────
+# Regenerated via: npx prisma generate
+node_modules/.prisma/
+
+# ─── Uploaded files ─────────────────────────────────────
+# User-uploaded materials - too large for git
+uploads/
+
+# ─── Backup archives ────────────────────────────────────
+# System backup files - too large for git
+archives/
+
+# ─── Logs ───────────────────────────────────────────────
+*.log
+npm-debug.log*
+teacher_error.log
+error.log
+
+# ─── OS & Editor ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ─── Misc ───────────────────────────────────────────────
+*.tmp
+*.bak
+test_notes.js
+test_notes_crud.js
+prisma_error.txt

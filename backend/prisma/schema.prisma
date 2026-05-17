@@ -1,0 +1,546 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 Int            @id @default(autoincrement())
+  name               String
+  email              String         @unique
+  password           String
+  role               String         @default("STUDENT")
+  isActive           Boolean        @default(true)
+  avatar             String?
+  lastLogin          DateTime?
+  isOnline           Boolean        @default(false)
+  loginCount         Int            @default(0)
+  mustChangePassword Boolean        @default(false)
+  permissions        String?
+  gender             String?         // MALE | FEMALE | OTHER
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  achievements       Achievement[]
+  auditLogs          AuditLog[]
+  forumPosts         ForumPost[]
+  forumThreads       ForumThread[]
+  materials          Material[]
+  receivedMessages   Message[]      @relation("ReceivedMessages")
+  sentMessages       Message[]      @relation("SentMessages")
+  notes              Note[]
+  notifications      Notification[]
+  student            Student?
+  teacher            Teacher?
+  shopItems          ShopItem[]
+  shopInterests      ShopInterest[]
+  materialProgress   MaterialProgress[]
+  simulations        Simulation[]
+
+  @@map("users")
+}
+
+model Student {
+  id           Int           @id @default(autoincrement())
+  userId       Int           @unique
+  classId      Int?
+  points       Int           @default(0)
+  parentName   String?
+  parentEmail  String?
+  parentPhone  String?
+  achievements Achievement[]
+  attendance   Attendance[]
+  quizAttempts QuizAttempt[]
+  class        Class?        @relation(fields: [classId], references: [id])
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submissions  Submission[]
+
+  @@map("students")
+}
+
+model Teacher {
+  id             Int             @id @default(autoincrement())
+  userId         Int             @unique
+  subjects       String?
+  classes        String?
+  assignments    Assignment[]
+  courseTeachers CourseTeacher[]
+  liveClasses    LiveClass[]
+  quizzes        Quiz[]
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("teachers")
+}
+
+model Class {
+  id                Int               @id @default(autoincrement())
+  name              String
+  description       String?
+  attendance        Attendance[]
+  courseClasses     CourseClass[]
+  liveClasses       LiveClass[]
+  students          Student[]
+  subjects          Subject[]
+  assignmentClasses AssignmentClass[]
+  quizClasses       QuizClass[]
+
+  @@map("classes")
+}
+
+model Subject {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  classId     Int
+  courses     Course[]
+  class       Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@map("subjects")
+}
+
+model Course {
+  id             Int             @id @default(autoincrement())
+  title          String
+  description    String?
+  subjectId      Int
+  assignments    Assignment[]
+  courseClasses  CourseClass[]
+  courseTeachers CourseTeacher[]
+  subject        Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  quizzes        Quiz[]
+  topics         Topic[]
+
+  @@map("courses")
+}
+
+model CourseClass {
+  courseId Int
+  classId  Int
+  class    Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, classId])
+  @@map("course_classes")
+}
+
+model CourseTeacher {
+  courseId  Int
+  teacherId Int
+  teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, teacherId])
+  @@map("course_teachers")
+}
+
+model Topic {
+  id          Int        @id @default(autoincrement())
+  courseId    Int
+  title       String
+  description String?
+  orderIndex  Int        @default(0)
+  materials   Material[]
+  course      Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@map("topics")
+}
+
+model Material {
+  id          Int      @id @default(autoincrement())
+  topicId     Int?
+  type        String   @default("PDF")
+  fileName    String
+  filePath    String
+  description String?
+  textContent String?
+  externalUrl String?
+  isGlobal    Boolean  @default(false)
+  uploadedBy  Int
+  createdAt   DateTime @default(now())
+  uploader    User     @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+  topic       Topic?   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  progress    MaterialProgress[]
+
+  @@map("materials")
+}
+
+model Simulation {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  category    String   @default("Physics") // Physics | Math | Chemistry | Biology | Earth Science
+  iframeUrl   String
+  thumbnail   String?
+  isGlobal    Boolean  @default(true)
+  uploadedBy  Int
+  createdAt   DateTime @default(now())
+  uploader    User     @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+
+  @@map("simulations")
+}
+
+model MaterialProgress {
+  id          Int      @id @default(autoincrement())
+  studentId   Int
+  materialId  Int
+  status      String   @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  material    Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, materialId])
+  @@map("material_progress")
+}
+
+model Note {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  content   String
+  category  String   @default("General")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notes")
+}
+
+model Quiz {
+  id            Int            @id @default(autoincrement())
+  courseId      Int
+  title         String
+  duration      Int            @default(30)
+  isPublished   Boolean        @default(false)
+  attemptLimit  Int            @default(1)
+  dueDate       DateTime?
+  createdBy     Int
+  createdAt     DateTime       @default(now())
+  quizAttempts  QuizAttempt[]
+  quizQuestions QuizQuestion[]
+  quizClasses   QuizClass[]
+  creator       Teacher        @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  course        Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id           Int          @id @default(autoincrement())
+  quizId       Int
+  questionText String
+  points       Int          @default(1)
+  answers      QuizAnswer[]
+  options      QuizOption[]
+  quiz         Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_questions")
+}
+
+model QuizOption {
+  id          Int          @id @default(autoincrement())
+  questionId  Int
+  optionLabel String
+  optionText  String
+  isCorrect   Boolean      @default(false)
+  answers     QuizAnswer[]
+  question    QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_options")
+}
+
+model QuizAttempt {
+  id          Int          @id @default(autoincrement())
+  studentId   Int
+  quizId      Int
+  score       Float        @default(0)
+  total       Float        @default(0)
+  strikes     Int          @default(0)
+  submittedAt DateTime     @default(now())
+  answers     QuizAnswer[]
+  quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  student     Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_attempts")
+}
+
+model QuizAnswer {
+  id               Int          @id @default(autoincrement())
+  attemptId        Int
+  questionId       Int
+  selectedOptionId Int?
+  isCorrect        Boolean      @default(false)
+  option           QuizOption?  @relation(fields: [selectedOptionId], references: [id])
+  question         QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  attempt          QuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_answers")
+}
+
+model Assignment {
+  id          Int               @id @default(autoincrement())
+  courseId    Int
+  title       String
+  description String?
+  deadline    DateTime
+  maxScore    Int               @default(100)
+  filePath    String?
+  createdBy   Int
+  createdAt   DateTime          @default(now())
+  creator     Teacher           @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  course      Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+  assignmentClasses AssignmentClass[]
+
+  @@map("assignments")
+}
+
+model AssignmentClass {
+  id           Int        @id @default(autoincrement())
+  assignmentId Int
+  classId      Int
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  class        Class      @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, classId])
+  @@map("assignment_classes")
+}
+
+model QuizClass {
+  id      Int   @id @default(autoincrement())
+  quizId  Int
+  classId Int
+  quiz    Quiz  @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  class   Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([quizId, classId])
+  @@map("quiz_classes")
+}
+
+model Submission {
+  id           Int        @id @default(autoincrement())
+  assignmentId Int
+  studentId    Int
+  filePath     String?
+  textContent  String?
+  submittedAt  DateTime   @default(now())
+  grade        Float?
+  feedback     String?
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, studentId])
+  @@map("submissions")
+}
+
+model Attendance {
+  id        Int      @id @default(autoincrement())
+  studentId Int
+  classId   Int
+  date      DateTime
+  status    String   @default("PRESENT")
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, classId, date])
+  @@map("attendance")
+}
+
+model Message {
+  id         Int      @id @default(autoincrement())
+  senderId   Int
+  receiverId Int
+  message    String
+  type       String   @default("TEXT")
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, receiverId])
+  @@map("messages")
+}
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     // Made nullable so it can be a global/targeted notification
+  type       String
+  title      String
+  message    String
+  isRead     Boolean  @default(false)
+  isGlobal   Boolean  @default(false)
+  targetRole String?  // "all", "teacher", "student"
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model Settings {
+  id                Int     @id @default(autoincrement())
+  schoolCode        String  @unique
+  schoolName        String
+  logo              String?
+  academicYear      String
+  term              String
+  primaryColor      String  @default("#6366f1")
+  secondaryColor    String  @default("#4f46e5")
+  lockdownMode      Boolean @default(false)
+  allowRegistration Boolean @default(true)
+  defaultTheme      String  @default("DARK")
+  welcomeMessage    String?
+  supportEmail      String?
+  supportPhone      String?
+  passingGrade      Int     @default(50)
+  gradingSystem     String  @default("PERCENTAGE")
+  maxUploadSize     Int     @default(5)
+  enableMessaging   Boolean @default(true)
+
+  @@map("settings")
+}
+
+model Analytics {
+  id        Int      @id @default(autoincrement())
+  type      String
+  dataJson  String
+  createdAt DateTime @default(now())
+
+  @@map("analytics")
+}
+
+model Achievement {
+  id          Int      @id @default(autoincrement())
+  studentId   Int
+  userId      Int
+  title       String
+  description String?
+  points      Int      @default(0)
+  badge       String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("achievements")
+}
+
+model LiveClass {
+  id             Int      @id @default(autoincrement())
+  title          String
+  classId        Int
+  teacherId      Int
+  googleMeetLink String
+  scheduleDate   DateTime
+  scheduleTime   String
+  duration       Int      @default(60)
+  createdAt      DateTime @default(now())
+  teacher        Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  class          Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@map("live_classes")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  action    String
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model AcademicSession {
+  id        Int       @id @default(autoincrement())
+  year      String
+  term      String
+  isCurrent Boolean   @default(false)
+  startDate DateTime?
+  endDate   DateTime?
+
+  @@map("academic_sessions")
+}
+
+model BackupLog {
+  id        Int      @id @default(autoincrement())
+  fileName  String
+  size      Int
+  status    String   @default("SUCCESS")
+  createdAt DateTime @default(now())
+
+  @@map("backup_logs")
+}
+
+model ForumCategory {
+  id          Int           @id @default(autoincrement())
+  name        String
+  description String?
+  subjectId   Int?
+  threads     ForumThread[]
+
+  @@map("forum_categories")
+}
+
+model ForumThread {
+  id         Int           @id @default(autoincrement())
+  categoryId Int
+  authorId   Int
+  title      String
+  content    String
+  isPinned   Boolean       @default(false)
+  isLocked   Boolean       @default(false)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  posts      ForumPost[]
+  author     User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category   ForumCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@map("forum_threads")
+}
+
+model ForumPost {
+  id        Int         @id @default(autoincrement())
+  threadId  Int
+  authorId  Int
+  content   String
+  createdAt DateTime    @default(now())
+  author    User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  thread    ForumThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@map("forum_posts")
+}
+
+model ShopItem {
+  id           Int            @id @default(autoincrement())
+  title        String
+  description  String?
+  price        Float          @default(0)
+  category     String         @default("GENERAL")
+  imageUrl     String?
+  status       String         @default("PENDING") // PENDING | APPROVED | REJECTED
+  contactPhone String?
+  createdBy    Int
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  creator      User           @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  interests    ShopInterest[]
+
+  @@map("shop_items")
+}
+
+model ShopInterest {
+  id        Int      @id @default(autoincrement())
+  itemId    Int
+  userId    Int
+  createdAt DateTime @default(now())
+  item      ShopItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, userId])
+  @@map("shop_interests")
+}

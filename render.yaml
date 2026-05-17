@@ -1,0 +1,9 @@
+services:
+  - type: static
+    name: onereal-lms-frontend
+    env: static
+    buildCommand: npm run build
+    publishDir: dist
+    routes:
+      - source: /*
+        destination: /index.html
