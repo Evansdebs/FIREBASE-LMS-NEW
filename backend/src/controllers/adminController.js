@@ -649,6 +649,9 @@ const getPublicSettings = async (req, res) => {
         primaryColor: true,
         secondaryColor: true,
         lockdownMode: true,
+        welcomeMessage: true,
+        supportEmail: true,
+        supportPhone: true,
       }
     });
     res.json(settings || {});
@@ -665,7 +668,7 @@ const updateSettings = async (req, res) => {
     
     const { 
       schoolName, academicYear, term, primaryColor, secondaryColor, lockdownMode, defaultTheme, allowRegistration, welcomeMessage,
-      supportEmail, supportPhone, passingGrade, gradingSystem, maxUploadSize, enableMessaging, adminPassword
+      supportEmail, supportPhone, passingGrade, gradingSystem, maxUploadSize, enableMessaging, adminPassword, logo
     } = req.body;
 
     // Security: If changing lockdown mode, strictly verify the maintenance password
@@ -683,7 +686,7 @@ const updateSettings = async (req, res) => {
       where: { id: settings.id },
       data: { 
         schoolName, academicYear, term, primaryColor, secondaryColor, lockdownMode, defaultTheme, allowRegistration, welcomeMessage,
-        supportEmail, supportPhone,
+        supportEmail, supportPhone, logo,
         passingGrade: parseInt(passingGrade) || 50,
         gradingSystem,
         maxUploadSize: parseInt(maxUploadSize) || 5,
@@ -706,6 +709,41 @@ const updateSettings = async (req, res) => {
   } catch (err) {
     console.error('Update settings error:', err);
     res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+const uploadLogo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded.' });
+    }
+
+    const settingsArr = await prisma.settings.findMany();
+    const settings = settingsArr[0];
+    if (!settings) return res.status(404).json({ error: 'Settings not found.' });
+
+    const logoUrl = `/uploads/branding/${req.file.filename}`;
+
+    const updated = await prisma.settings.update({
+      where: { id: settings.id },
+      data: { logo: logoUrl },
+    });
+
+    // Broadcast updated settings to all connected clients
+    const wss = req.app.get('wss');
+    if (wss) {
+      const broadcastMsg = JSON.stringify({ type: 'SETTINGS_UPDATED', payload: updated });
+      wss.clients.forEach(client => {
+        if (client.readyState === 1) { // 1 = OPEN
+          client.send(broadcastMsg);
+        }
+      });
+    }
+
+    res.json({ logo: logoUrl, settings: updated });
+  } catch (err) {
+    console.error('Upload logo error:', err);
+    res.status(500).json({ error: 'Server error during logo upload.' });
   }
 };
 
@@ -1907,5 +1945,5 @@ module.exports = {
   getLiveClasses, getGradebook, 
   getMaterials, createMaterial, updateMaterial, deleteMaterial,
   getRiskReport, downloadBackup, getBackups, createBackup, restoreBackup, uploadRestoreBackup, deleteBackup,
-  verifyPassword, getPublicSettings, deleteAuditLog
+  verifyPassword, getPublicSettings, deleteAuditLog, uploadLogo
 };

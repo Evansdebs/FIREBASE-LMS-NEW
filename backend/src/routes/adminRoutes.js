@@ -58,6 +58,7 @@ router.delete('/courses/:id', authorize('manage_courses'), adminController.delet
 // Settings
 router.get('/settings', authorize('manage_settings'), adminController.getSettings);
 router.put('/settings', authorize('manage_settings'), adminController.updateSettings);
+router.post('/settings/upload-logo', authorize('manage_settings'), upload.single('logo'), adminController.uploadLogo);
 router.post('/verify-password', authorize('manage_settings'), adminController.verifyPassword);
 
 // Quizzes (Admin view & manage)

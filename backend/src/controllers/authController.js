@@ -33,21 +33,52 @@ const login = async (req, res) => {
     });
 
     if (!user) {
+      await prisma.auditLog.create({
+        data: {
+          action: 'LOGIN_FAILED',
+          details: `Failed login attempt for non-existent email: ${email}`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     // Check lockdown mode (except for Super Admin)
     if (settings.lockdownMode && user.role !== 'SUPER_ADMIN') {
+      await prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'LOGIN_BLOCKED',
+          details: `Login blocked: platform in maintenance mode`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
       return res.status(503).json({ error: 'System is in maintenance mode.' });
     }
 
     if (!user.isActive) {
+      await prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'LOGIN_BLOCKED',
+          details: `Login blocked: account is deactivated`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
       return res.status(403).json({ error: 'Account is deactivated.' });
     }
 
     // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      await prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'LOGIN_FAILED',
+          details: `Failed login attempt (incorrect password)`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
@@ -58,6 +89,16 @@ const login = async (req, res) => {
         lastLogin: new Date(),
         isOnline: true,
         loginCount: { increment: 1 }
+      }
+    });
+
+    // Create successful login audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'LOGIN',
+        details: `${user.role} logged in successfully`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
       }
     });
 
@@ -169,6 +210,14 @@ const logout = async (req, res) => {
         where: { id: req.user.id },
         data: { isOnline: false }
       });
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'LOGOUT',
+          details: `User logged out`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
     }
     res.json({ message: 'Logged out' });
   } catch (err) {
@@ -199,6 +248,15 @@ const changeForcedPassword = async (req, res) => {
         lastLogin: new Date(),
         isOnline: true,
         loginCount: { increment: 1 }
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'PASSWORD_RESET_FORCED',
+        details: `User completed forced password reset`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
       }
     });
 

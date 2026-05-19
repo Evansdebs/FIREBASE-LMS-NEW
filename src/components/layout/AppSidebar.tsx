@@ -1,4 +1,5 @@
 import { useAuth } from '@/lib/auth-context';
+import { useBranding } from '@/lib/branding-context';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, BookOpen, Settings, LogOut, GraduationCap,
@@ -95,6 +96,7 @@ export default function AppSidebar({
   logo 
 }: AppSidebarProps) {
   const { user, logout } = useAuth();
+  const { settings } = useBranding();
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -186,6 +188,29 @@ export default function AppSidebar({
             </div>
           );
         })}
+
+        {/* Support desk panel for students and teachers */}
+        {!collapsed && user.role !== 'SUPER_ADMIN' && settings && (settings.supportEmail || settings.supportPhone) && (
+          <div className="mt-6 p-4 rounded-xl bg-sidebar-accent/30 border border-sidebar-border/10 space-y-2.5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <p className="text-[10px] font-bold text-sidebar-primary uppercase tracking-wider">Support Desk</p>
+            {settings.supportEmail && (
+              <a 
+                href={`mailto:${settings.supportEmail}`} 
+                className="flex items-center gap-2 text-xs text-sidebar-foreground/80 hover:text-sidebar-primary transition-colors truncate"
+              >
+                <span className="font-semibold text-sidebar-primary">✉</span> {settings.supportEmail}
+              </a>
+            )}
+            {settings.supportPhone && (
+              <a 
+                href={`tel:${settings.supportPhone}`} 
+                className="flex items-center gap-2 text-xs text-sidebar-foreground/80 hover:text-sidebar-primary transition-colors truncate"
+              >
+                <span className="font-semibold text-sidebar-primary">📞</span> {settings.supportPhone}
+              </a>
+            )}
+          </div>
+        )}
 
         {/* User profile integrated at the end of nav */}
         <div className={cn("mt-6 pt-4 border-t border-sidebar-border/10", collapsed && "mt-4")}>

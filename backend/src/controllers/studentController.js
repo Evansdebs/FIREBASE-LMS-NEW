@@ -278,6 +278,15 @@ const updateMaterialProgress = async (req, res) => {
           }
         });
       }
+
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'MATERIAL_COMPLETE',
+          details: `Completed learning material ID: ${materialId}`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
     }
 
     res.json(progress);
@@ -342,6 +351,15 @@ const startQuiz = async (req, res) => {
       data: { studentId: student.id, quizId: quiz.id, score: 0, strikes: 0 }
     });
 
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'QUIZ_START',
+        details: `Started quiz: ${quiz.title} (Attempt #${attemptCount + 1})`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
+
     res.json({ quiz: { ...quiz, duration: quiz.duration, attemptNumber: attemptCount + 1 }, attemptId: attempt.id });
   } catch (err) {
     res.status(500).json({ error: 'Server error.' });
@@ -389,19 +407,18 @@ const submitQuiz = async (req, res) => {
     // Auto-grade MCQ
     let score = 0;
     let total = 0;
+    const answersToCreate = [];
+
     for (const q of quiz.quizQuestions) {
       total += q.points;
       const selectedOptionId = answers[q.id] ? parseInt(answers[q.id]) : null;
       const correctOption = q.options.find(o => o.isCorrect);
       const isCorrect = selectedOptionId && correctOption && selectedOptionId === correctOption.id;
       
-      await prisma.quizAnswer.create({
-        data: {
-          attemptId: attempt.id,
-          questionId: q.id,
-          selectedOptionId: selectedOptionId,
-          isCorrect: !!isCorrect,
-        }
+      answersToCreate.push({
+        questionId: q.id,
+        selectedOptionId: selectedOptionId,
+        isCorrect: !!isCorrect,
       });
       
       if (isCorrect) score += q.points;
@@ -409,63 +426,90 @@ const submitQuiz = async (req, res) => {
 
     const percentage = total > 0 ? (score / total) * 100 : 0;
 
-    // Update attempt with score
-    await prisma.quizAttempt.update({
-      where: { id: attempt.id },
-      data: { score, total }
-    });
-
-    // Award Quiz Master for 100%
-    if (percentage === 100) {
-      const existing = await prisma.achievement.findFirst({
-        where: { studentId: student.id, title: `Quiz Master: ${quiz.title}` }
-      });
-      if (!existing) {
-        await prisma.achievement.create({
-          data: {
-            studentId: student.id,
-            userId: req.user.id,
-            title: `Quiz Master: ${quiz.title}`,
-            description: `Perfect score on ${quiz.title}!`,
-            points: 100,
-            badge: 'trophy',
-          },
-        });
-      }
-    }
-
-    // Award achievement points (General Performance)
-    if (percentage >= 90) {
-      await prisma.achievement.create({
-        data: {
-          studentId: student.id,
-          userId: req.user.id,
-          title: `Excellent in ${quiz.title}`,
-          description: `Scored ${percentage.toFixed(0)}% on ${quiz.title}`,
-          points: 50,
-          badge: 'star',
-        },
-      });
-    } else if (percentage >= 70) {
-      await prisma.achievement.create({
-        data: {
-          studentId: student.id,
-          userId: req.user.id,
-          title: `Good Performance in ${quiz.title}`,
-          description: `Scored ${percentage.toFixed(0)}% on ${quiz.title}`,
-          points: 20,
-          badge: 'medal',
-        },
-      });
-    }
-
     let grade = 'F';
     if (percentage >= 90) grade = 'A';
     else if (percentage >= 80) grade = 'B';
     else if (percentage >= 70) grade = 'C';
     else if (percentage >= 60) grade = 'D';
 
-    res.json({ attempt: { ...attempt, score, total }, percentage, grade });
+    // ACID Transaction wrapping all database updates
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      // 1. Create all quiz answers
+      for (const answer of answersToCreate) {
+        await tx.quizAnswer.create({
+          data: {
+            attemptId: attempt.id,
+            questionId: answer.questionId,
+            selectedOptionId: answer.selectedOptionId,
+            isCorrect: answer.isCorrect,
+          }
+        });
+      }
+
+      // 2. Update quiz attempt score & total
+      const updatedAttempt = await tx.quizAttempt.update({
+        where: { id: attempt.id },
+        data: { score, total }
+      });
+
+      // 3. Award Quiz Master for 100%
+      if (percentage === 100) {
+        const existing = await tx.achievement.findFirst({
+          where: { studentId: student.id, title: `Quiz Master: ${quiz.title}` }
+        });
+        if (!existing) {
+          await tx.achievement.create({
+            data: {
+              studentId: student.id,
+              userId: req.user.id,
+              title: `Quiz Master: ${quiz.title}`,
+              description: `Perfect score on ${quiz.title}!`,
+              points: 100,
+              badge: 'trophy',
+            },
+          });
+        }
+      }
+
+      // 4. Award achievement points (General Performance)
+      if (percentage >= 90) {
+        await tx.achievement.create({
+          data: {
+            studentId: student.id,
+            userId: req.user.id,
+            title: `Excellent in ${quiz.title}`,
+            description: `Scored ${percentage.toFixed(0)}% on ${quiz.title}`,
+            points: 50,
+            badge: 'star',
+          },
+        });
+      } else if (percentage >= 70) {
+        await tx.achievement.create({
+          data: {
+            studentId: student.id,
+            userId: req.user.id,
+            title: `Good Performance in ${quiz.title}`,
+            description: `Scored ${percentage.toFixed(0)}% on ${quiz.title}`,
+            points: 20,
+            badge: 'medal',
+          },
+        });
+      }
+
+      // 5. Create audit log record
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'QUIZ_SUBMIT',
+          details: `Submitted quiz: ${quiz.title} (Score: ${score}/${total}, Grade: ${grade})`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
+
+      return updatedAttempt;
+    });
+
+    res.json({ attempt: transactionResult, percentage, grade });
   } catch (err) {
     console.error('Submit quiz error:', err);
     res.status(500).json({ error: 'Server error.' });
@@ -525,6 +569,16 @@ const submitAssignment = async (req, res) => {
         textContent,
       },
     });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'ASSIGNMENT_SUBMIT',
+        details: `Submitted assignment: ${assignment.title}`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
+
     res.json(submission);
   } catch (err) {
     console.error('Submit assignment error:', err);
@@ -668,48 +722,66 @@ const addPomodoroPoints = async (req, res) => {
     const { skipped } = req.body;
     const incrementAmount = skipped ? 5 : 15;
 
-    // Award points to the student
-    const updatedStudent = await prisma.student.update({
-      where: { userId },
-      data: {
-        points: { increment: incrementAmount }
-      }
-    });
-
-    // Check and award Focus Master badge only if they did NOT skip and completed their first Pomodoro
-    if (!skipped) {
-      const badgeName = 'focus_master';
-      const achievements = await prisma.achievement.findFirst({
-        where: { studentId: student.id, badge: badgeName }
+    // ACID transaction wrapping student points updates, achievement creation, and audit logging
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Award focus session points
+      const updatedStudent = await tx.student.update({
+        where: { userId },
+        data: {
+          points: { increment: incrementAmount }
+        }
       });
 
-      if (!achievements) {
-        await prisma.achievement.create({
-          data: {
-            studentId: student.id,
-            userId: userId,
-            title: 'Focus Master',
-            description: 'Completed your first Virtual Pomodoro study session!',
-            points: 50,
-            badge: badgeName
-          }
+      // 2. Check and award focus master badge
+      let focusMasterAwarded = false;
+      if (!skipped) {
+        const badgeName = 'focus_master';
+        const achievements = await tx.achievement.findFirst({
+          where: { studentId: student.id, badge: badgeName }
         });
-        
-        // Let's also award the +50 points for the badge!
-        await prisma.student.update({
-          where: { userId },
-          data: {
-            points: { increment: 50 }
-          }
-        });
+
+        if (!achievements) {
+          await tx.achievement.create({
+            data: {
+              studentId: student.id,
+              userId: userId,
+              title: 'Focus Master',
+              description: 'Completed your first Virtual Pomodoro study session!',
+              points: 50,
+              badge: badgeName
+            }
+          });
+          
+          // Award additional 50 points
+          const doubleUpdated = await tx.student.update({
+            where: { userId },
+            data: {
+              points: { increment: 50 }
+            }
+          });
+          focusMasterAwarded = true;
+          updatedStudent.points = doubleUpdated.points;
+        }
       }
-    }
+
+      // 3. Create Audit Log inside transaction
+      await tx.auditLog.create({
+        data: {
+          userId: userId,
+          action: 'POMODORO_COMPLETE',
+          details: `Completed focus study session (skipped: ${skipped}, focus_master_awarded: ${focusMasterAwarded})`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
+
+      return updatedStudent;
+    });
 
     res.json({
       message: skipped 
         ? 'Pomodoro session skipped. +5 XP points awarded.'
         : 'Pomodoro session completed successfully! +15 XP awarded.',
-      points: updatedStudent.points
+      points: result.points
     });
   } catch (err) {
     console.error('Add Pomodoro points error:', err);

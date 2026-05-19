@@ -255,6 +255,14 @@ const createTopic = async (req, res) => {
     const topic = await prisma.topic.create({
       data: { courseId: parseInt(courseId), title, description, orderIndex: orderIndex || 0 },
     });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'TOPIC_CREATE',
+        details: `Created topic: "${title}" (Course ID: ${courseId})`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
     res.status(201).json(topic);
   } catch (err) {
     console.error('Get my courses error:', err);
@@ -269,6 +277,14 @@ const updateTopic = async (req, res) => {
       where: { id: parseInt(req.params.id) },
       data: { title, description, orderIndex },
     });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'TOPIC_UPDATE',
+        details: `Updated topic ID: ${req.params.id} ("${title}")`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
     res.json(topic);
   } catch (err) {
     console.error('Get my courses error:', err);
@@ -279,6 +295,14 @@ const updateTopic = async (req, res) => {
 const deleteTopic = async (req, res) => {
   try {
     await prisma.topic.delete({ where: { id: parseInt(req.params.id) } });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'TOPIC_DELETE',
+        details: `Deleted topic ID: ${req.params.id}`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
     res.json({ message: 'Topic deleted.' });
   } catch (err) {
     console.error('Get my courses error:', err);
@@ -357,6 +381,14 @@ const uploadMaterial = async (req, res) => {
         uploadedBy: req.user.id,
       },
     });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'MATERIAL_UPLOAD',
+        details: `Uploaded material: "${finalTitle || 'Untitled'}" (Type: ${finalType})`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
     res.status(201).json(material);
   } catch (err) {
     console.error('Upload material error:', err);
@@ -403,6 +435,14 @@ const updateMaterial = async (req, res) => {
 const deleteMaterial = async (req, res) => {
   try {
     await prisma.material.delete({ where: { id: parseInt(req.params.id) } });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'MATERIAL_DELETE',
+        details: `Deleted material ID: ${req.params.id}`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
     res.json({ message: 'Material deleted.' });
   } catch (err) {
     console.error('Get my courses error:', err);
@@ -484,6 +524,16 @@ const createQuiz = async (req, res) => {
           });
         }
       }
+
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'QUIZ_CREATE',
+          details: `Created quiz: "${title}"`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
+
       return fetched;
     });
 
@@ -541,6 +591,15 @@ const updateQuiz = async (req, res) => {
         }
       }
 
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'QUIZ_UPDATE',
+          details: `Updated quiz ID: ${quizId} ("${title}")`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
+
       return tx.quiz.findUnique({
         where: { id: quizId },
         include: { quizQuestions: { include: { options: true } }, quizClasses: true },
@@ -557,6 +616,14 @@ const updateQuiz = async (req, res) => {
 const deleteQuiz = async (req, res) => {
   try {
     await prisma.quiz.delete({ where: { id: parseInt(req.params.id) } });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'QUIZ_DELETE',
+        details: `Deleted quiz ID: ${req.params.id}`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
     res.json({ message: 'Quiz deleted.' });
   } catch (err) {
     console.error('Delete quiz error:', err);
@@ -633,6 +700,16 @@ const createAssignment = async (req, res) => {
           });
         }
       }
+
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'ASSIGNMENT_CREATE',
+          details: `Created assignment: "${title}"`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
+
       return ass;
     });
 
@@ -683,6 +760,15 @@ const updateAssignment = async (req, res) => {
         }
       }
 
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'ASSIGNMENT_UPDATE',
+          details: `Updated assignment ID: ${assignmentId} ("${title}")`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
+
       return ass;
     });
     res.json(assignment);
@@ -712,7 +798,18 @@ const gradeSubmission = async (req, res) => {
     const submission = await prisma.submission.update({
       where: { id: parseInt(req.params.id) },
       data: { grade: parseFloat(grade), feedback },
+      include: { student: { include: { user: { select: { name: true } } } } }
     });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'SUBMISSION_GRADE',
+        details: `Graded student submission (Student: ${submission.student?.user?.name || 'N/A'}, Grade: ${grade})`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
+
     res.json(submission);
   } catch (err) {
     console.error('Grade submission error:', err);
@@ -738,6 +835,15 @@ const deleteAssignment = async (req, res) => {
     
     // Delete assignment
     await prisma.assignment.delete({ where: { id: assignmentId } });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'ASSIGNMENT_DELETE',
+        details: `Deleted assignment ID: ${assignmentId} ("${assignment.title}")`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
     
     res.json({ message: 'Assignment deleted successfully.' });
   } catch (err) {
@@ -805,6 +911,16 @@ const markAttendance = async (req, res) => {
       });
       results.push(att);
     }
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'ATTENDANCE_MARK',
+        details: `Recorded attendance for Class ID: ${classId} on Date: ${date} (${records.length} records)`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
+
     res.json({ message: 'Attendance recorded.', records: results });
   } catch (err) {
     console.error('Mark attendance error:', err);
@@ -851,6 +967,16 @@ const createLiveClass = async (req, res) => {
         duration: parseInt(duration) || 60,
       },
     });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'LIVECLASS_CREATE',
+        details: `Created live class: "${title}"`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
+
     res.status(201).json(liveClass);
   } catch (err) {
     console.error('Create live class error:', err);
@@ -902,6 +1028,15 @@ const updateLiveClass = async (req, res) => {
       },
     });
 
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'LIVECLASS_UPDATE',
+        details: `Updated live class ID: ${liveClassId} ("${title}")`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
+
     res.json(updated);
   } catch (err) {
     console.error('Update live class error:', err);
@@ -923,6 +1058,16 @@ const deleteLiveClass = async (req, res) => {
     }
 
     await prisma.liveClass.delete({ where: { id: liveClassId } });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'LIVECLASS_DELETE',
+        details: `Deleted live class ID: ${liveClassId} ("${liveClass.title}")`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
+
     res.json({ message: 'Live class deleted successfully.' });
   } catch (err) {
     console.error('Delete live class error:', err);

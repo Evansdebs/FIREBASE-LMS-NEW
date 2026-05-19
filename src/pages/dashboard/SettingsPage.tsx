@@ -20,6 +20,7 @@ export default function SettingsPage() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [pendingLockdown, setPendingLockdown] = useState<boolean | null>(null);
+  const [logoMode, setLogoMode] = useState<'url' | 'file'>('url');
 
   useEffect(() => {
     fetchSettings();
@@ -226,14 +227,60 @@ export default function SettingsPage() {
 
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label className="text-sm font-bold">Public/Login Logo URL</Label>
-                    <div className="flex gap-2">
-                       <div className="w-12 h-12 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden border border-border">
+                    <Label className="text-sm font-bold">School Branding Logo</Label>
+                    
+                    <div className="flex items-center gap-1.5 mb-3 bg-muted p-0.5 rounded-lg w-fit border border-border">
+                      <button
+                        type="button"
+                        onClick={() => setLogoMode('url')}
+                        className={`text-[10px] font-bold px-3 py-1 rounded-md transition-all ${logoMode === 'url' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                      >
+                        Image URL
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLogoMode('file')}
+                        className={`text-[10px] font-bold px-3 py-1 rounded-md transition-all ${logoMode === 'file' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                      >
+                        Local PC Upload
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                       <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center shrink-0 overflow-hidden border border-border">
                           {settings.logo ? <img src={settings.logo} className="w-full h-full object-contain" /> : <Globe className="w-6 h-6 opacity-20" />}
                        </div>
-                       <Input value={settings.logo || ''} onChange={e => setSettings({...settings, logo: e.target.value})} placeholder="https://path-to-logo.png" className="flex-1" />
+                       
+                       {logoMode === 'url' ? (
+                         <Input 
+                           value={settings.logo || ''} 
+                           onChange={e => setSettings({...settings, logo: e.target.value})} 
+                           placeholder="https://example.com/logo.png" 
+                           className="flex-1 text-xs" 
+                         />
+                       ) : (
+                         <Input 
+                           type="file" 
+                           accept="image/*" 
+                           className="flex-1 text-xs cursor-pointer file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90" 
+                           onChange={async (e) => {
+                             const file = e.target.files?.[0];
+                             if (!file) return;
+                             const uploadToast = toast.loading('Uploading logo to system server...');
+                             try {
+                               const formData = new FormData();
+                               formData.append('logo', file);
+                               const response = await api.post('/api/admin/settings/upload-logo', formData);
+                               setSettings({ ...settings, logo: response.logo });
+                               toast.success('Branding logo uploaded successfully!', { id: uploadToast });
+                             } catch (err: any) {
+                               toast.error(err.response?.data?.error || 'Failed to upload logo', { id: uploadToast });
+                             }
+                           }} 
+                         />
+                       )}
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-1">Recommended size: 200x200px. Supports PNG/SVG.</p>
+                    <p className="text-[10px] text-muted-foreground mt-1.5">Recommended format: Square SVG or PNG with transparent background.</p>
                   </div>
 
                   <div className="p-4 rounded-xl bg-muted/40 border border-border mt-4">

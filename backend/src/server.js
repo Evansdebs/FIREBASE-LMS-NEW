@@ -87,18 +87,21 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ─── RATE LIMITING (Security) ───────────────────────────
+const rateLimitWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 1 * 60 * 1000; // Default 1 minute
+const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX) || 200; // Default 200 requests
+
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per `window`
-  message: { error: 'Too many requests from this IP, please try again after 15 minutes' },
+  windowMs: rateLimitWindowMs,
+  max: rateLimitMax,
+  message: { error: `Too many requests from this IP, please try again after ${Math.ceil(rateLimitWindowMs / 1000)} seconds.` },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const loginLimiter = rateLimit({
-  windowMs: 30 * 1000, // 30 seconds
-  max: 5, // Limit each IP to 5 login attempts per `window`
-  message: { error: 'Too many login attempts, please try again after 30 seconds' },
+  windowMs: 15 * 1000, // 15 seconds
+  max: 10, // Limit each IP to 10 login attempts per `window`
+  message: { error: 'Too many login attempts, please try again after 15 seconds.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
