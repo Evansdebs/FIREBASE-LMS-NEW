@@ -1,3 +1,6 @@
+// ⚠️ WARNING: Running this script will immediately delete all existing data, classes, subjects, courses, and non-admin users from the database.
+// Do not run this script unless you explicitly want to purge all data and reset the curriculum.
+
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 

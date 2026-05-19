@@ -1,7 +1,7 @@
 {
   "name": "onereal-lms-backend",
   "version": "1.0.0",
-  "description": "ONEREAL LMS Backend API (SQLite)",
+  "description": "ONEREAL LMS Backend API (PostgreSQL)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

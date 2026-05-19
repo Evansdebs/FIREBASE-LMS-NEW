@@ -13,7 +13,9 @@ services:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
-        value: file:./prisma/dev.db
+        fromDatabase:
+          name: onereal-lms-db
+          property: connectionString
       - key: JWT_EXPIRES_IN
         value: 7d
       - key: JWT_SECRET
@@ -38,3 +40,10 @@ services:
     envVars:
       - key: VITE_API_URL
         sync: false # You will be prompted to enter your backend URL in the Render dashboard
+
+databases:
+  - name: onereal-lms-db
+    plan: free
+    databaseName: onereal_lms
+    user: onereal_admin
+

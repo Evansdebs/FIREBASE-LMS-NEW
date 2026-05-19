@@ -1,3 +1,6 @@
+// ⚠️ WARNING: Running this script will immediately delete all users whose role is not SUPER_ADMIN from the database.
+// Do not run this script unless you explicitly want to purge all non-admin user accounts.
+
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 

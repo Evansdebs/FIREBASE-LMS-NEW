@@ -1,0 +1,12 @@
+{
+  "watch": ["src"],
+  "ext": "js,json",
+  "ignore": [
+    "prisma/*.db",
+    "prisma/*.db-journal",
+    "prisma/*.db-shm",
+    "prisma/*.db-wal",
+    "uploads/*",
+    "archives/*"
+  ]
+}
