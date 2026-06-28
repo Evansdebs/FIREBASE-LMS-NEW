@@ -609,7 +609,7 @@ const createQuiz = async (req, res) => {
     const teacher = await prisma.teacher.findUnique({ where: { userId: req.user.id } });
     if (!teacher) return res.status(404).json({ error: 'Teacher not found.' });
 
-    const { courseId, classIds, title, duration, attemptLimit, questions } = req.body;
+    const { courseId, classIds, title, duration, attemptLimit, questions, dueDate } = req.body;
     
     const fullQuiz = await prisma.$transaction(async (tx) => {
       const quiz = await tx.quiz.create({
@@ -619,6 +619,7 @@ const createQuiz = async (req, res) => {
           duration: parseInt(duration) || 30,
           attemptLimit: parseInt(attemptLimit) || 1,
           createdBy: teacher.id,
+          dueDate: dueDate ? new Date(dueDate) : null,
         },
       });
 
@@ -666,11 +667,14 @@ const createQuiz = async (req, res) => {
           select: { userId: true }
         });
         if (targetStudents.length > 0) {
+          const dueDateStr = dueDate
+            ? ` Due: ${new Date(dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}.`
+            : '';
           await tx.notification.createMany({
             data: targetStudents.map(s => ({
               userId: s.userId,
-              title: 'New Quiz Posted',
-              message: `A new quiz "${title}" has been posted for ${fetched.course.subject.name}.`,
+              title: '📝 New Quiz Posted',
+              message: `A new quiz "${title}" has been posted for ${fetched.course.subject.name}.${dueDateStr}`,
               type: 'ACADEMIC',
               isGlobal: false
             }))
@@ -700,9 +704,12 @@ const createQuiz = async (req, res) => {
 const updateQuiz = async (req, res) => {
   try {
     const quizId = parseInt(req.params.id);
-    const { title, duration, attemptLimit, isPublished, questions, classIds } = req.body;
+    const { title, duration, attemptLimit, isPublished, questions, classIds, dueDate } = req.body;
 
     const fullQuiz = await prisma.$transaction(async (tx) => {
+      // Fetch previous state to detect publish transition
+      const prevQuiz = await tx.quiz.findUnique({ where: { id: quizId }, select: { isPublished: true, dueDate: true } });
+
       await tx.quiz.update({
         where: { id: quizId },
         data: {
@@ -710,8 +717,33 @@ const updateQuiz = async (req, res) => {
           duration: duration ? parseInt(duration) : undefined,
           attemptLimit: attemptLimit !== undefined ? parseInt(attemptLimit) : undefined,
           isPublished,
+          dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : undefined,
         },
       });
+
+      // If being published now (or already published) with a due date, notify students
+      const justPublished = isPublished && !prevQuiz?.isPublished;
+      const dueDateChanged = dueDate && String(dueDate) !== String(prevQuiz?.dueDate);
+      if ((justPublished || dueDateChanged) && classIds && classIds.length > 0) {
+        const targetStudents = await tx.student.findMany({
+          where: { classId: { in: classIds.map(id => parseInt(id)) } },
+          select: { userId: true }
+        });
+        if (targetStudents.length > 0) {
+          const dueDateStr = dueDate
+            ? ` Due: ${new Date(dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}.`
+            : '';
+          await tx.notification.createMany({
+            data: targetStudents.map(s => ({
+              userId: s.userId,
+              title: justPublished ? '📝 Quiz Now Available' : '📝 Quiz Due Date Updated',
+              message: `Quiz "${title}" is ${justPublished ? 'now available' : 'updated'}.${dueDateStr}`,
+              type: 'ACADEMIC',
+              isGlobal: false
+            }))
+          });
+        }
+      }
 
       if (classIds && Array.isArray(classIds)) {
         await tx.quizClass.deleteMany({ where: { quizId } });

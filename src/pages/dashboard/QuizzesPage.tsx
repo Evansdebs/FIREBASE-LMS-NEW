@@ -13,13 +13,77 @@ import { Progress } from '@/components/ui/progress';
 import { api } from '@/lib/api';
 import {
   Plus, Search, Clock, CheckCircle, XCircle, PlayCircle, Trophy,
-  AlertTriangle, Trash2, Edit, Loader2, Download, Upload, FileSpreadsheet, FileText
+  AlertTriangle, Trash2, Edit, Loader2, Download, Upload, FileSpreadsheet, FileText, Calendar, Timer
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const LABELS = ['A', 'B', 'C', 'D'];
+
+// ─── COUNTDOWN HOOK ─────────────────────────────────────
+function useCountdown(dueDate: string | null | undefined) {
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (!dueDate) return;
+    const target = new Date(dueDate).getTime();
+    const tick = () => setTimeLeft(Math.max(0, target - Date.now()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [dueDate]);
+  return timeLeft;
+}
+
+function formatCountdown(ms: number) {
+  if (ms <= 0) return null;
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+  if (d > 0) return `${d}d ${h % 24}h left`;
+  if (h > 0) return `${h}h ${m % 60}m left`;
+  if (m > 0) return `${m}m ${s % 60}s left`;
+  return `${s}s left`;
+}
+
+function QuizDueBadge({ dueDate }: { dueDate: string }) {
+  const timeLeft = useCountdown(dueDate);
+
+  if (timeLeft === null) return null;
+
+  if (timeLeft <= 0) {
+    return (
+      <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 font-medium mb-3">
+        Closed
+      </Badge>
+    );
+  }
+
+  const formatted = formatCountdown(timeLeft);
+  if (!formatted) {
+    return (
+      <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 font-medium mb-3">
+        Closed
+      </Badge>
+    );
+  }
+
+  // Determine colors based on urgency
+  let colorClass = "bg-success/10 text-success border-success/20";
+  if (timeLeft <= 3600 * 1000) { // < 1 hour
+    colorClass = "bg-destructive/10 text-destructive border-destructive/20 animate-pulse font-bold";
+  } else if (timeLeft <= 24 * 3600 * 1000) { // < 24 hours
+    colorClass = "bg-warning/10 text-warning border-warning/20 font-semibold";
+  }
+
+  return (
+    <Badge variant="outline" className={cn("font-medium mb-3 gap-1 flex items-center w-fit", colorClass)}>
+      <Clock className="w-3.5 h-3.5" />
+      {formatted}
+    </Badge>
+  );
+}
 
 const downloadCSVTemplate = () => {
   const headers = [
@@ -587,12 +651,23 @@ export default function QuizzesPage() {
                 {quiz.class?.name && <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-none">{quiz.class.name}</Badge>}
                 {canManage && <span>{quiz._count?.quizAttempts || 0} submissions</span>}
               </div>
+
+              {/* Due date / countdown row */}
+              {isStudent && quiz.dueDate && <QuizDueBadge dueDate={quiz.dueDate} />}
+              {canManage && quiz.dueDate && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-3">
+                  <Calendar className="w-3 h-3" />
+                  Due: {new Date(quiz.dueDate).toLocaleString()}
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Created: {new Date(quiz.createdAt).toLocaleDateString()}</span>
                 {isStudent && quiz.isPublished && (
                   <Button size="sm" className="gap-2" onClick={() => startQuiz(quiz)}
-                    disabled={quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)}>
-                    {quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)
+                    disabled={quiz.isExpired || quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)}>
+                    {quiz.isExpired
+                      ? <><Timer className="w-3.5 h-3.5" /> Closed</>
+                      : quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)
                       ? <><CheckCircle className="w-3.5 h-3.5" /> Completed</>
                       : <><PlayCircle className="w-3.5 h-3.5" /> Start Quiz</>}
                   </Button>
@@ -889,7 +964,7 @@ function MCQQuestionBuilder({ questions, setQuestions }: { questions: any[]; set
 
 // ─── CREATE QUIZ FORM ─────────────────────────────────────
 function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; onRefresh: () => void; isAdmin: boolean }) {
-  const [form, setForm] = useState({ title: '', timeLimit: '30', attemptLimit: '1', courseId: '' });
+  const [form, setForm] = useState({ title: '', timeLimit: '30', attemptLimit: '1', courseId: '', dueDate: '' });
   const [classIds, setClassIds] = useState<string[]>([]);
   const [questions, setQuestions] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
@@ -923,6 +998,7 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
         classIds,
         timeLimit: parseInt(form.timeLimit),
         attemptLimit: parseInt(form.attemptLimit),
+        dueDate: form.dueDate || null,
         questions,
       });
       toast.success('Quiz created successfully!');
@@ -978,9 +1054,17 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
           </div>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div className="space-y-2"><Label>Duration (min)</Label><Input type="number" min="1" value={form.timeLimit} onChange={e => setForm(p => ({ ...p, timeLimit: e.target.value }))} required /></div>
         <div className="space-y-2"><Label>Attempt Limit</Label><Input type="number" min="1" value={form.attemptLimit} onChange={e => setForm(p => ({ ...p, attemptLimit: e.target.value }))} required /></div>
+        <div className="space-y-2">
+          <Label>Due Date (Optional)</Label>
+          <Input 
+            type="datetime-local" 
+            value={form.dueDate} 
+            onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} 
+          />
+        </div>
       </div>
 
       <hr className="border-border" />
@@ -1005,6 +1089,7 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
     attemptLimit: quiz.attemptLimit?.toString() || '1',
     courseId: quiz.courseId?.toString() || '',
     isPublished: quiz.isPublished || false,
+    dueDate: quiz.dueDate ? new Date(quiz.dueDate).toISOString().substring(0, 16) : '',
   });
 
   const [classIds, setClassIds] = useState<string[]>(
@@ -1059,6 +1144,7 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
         classIds,
         timeLimit: parseInt(form.timeLimit),
         attemptLimit: parseInt(form.attemptLimit),
+        dueDate: form.dueDate || null,
         questions,
       });
       toast.success('Quiz updated successfully!');
@@ -1147,7 +1233,7 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
           </div>
         )}
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <div className="space-y-2"><Label>Duration (min)</Label><Input type="number" min="1" value={form.timeLimit} onChange={e => setForm(p => ({ ...p, timeLimit: e.target.value }))} required /></div>
         <div className="space-y-2"><Label>Attempt Limit</Label><Input type="number" min="1" value={form.attemptLimit} onChange={e => setForm(p => ({ ...p, attemptLimit: e.target.value }))} required /></div>
         <div className="space-y-2">
@@ -1159,6 +1245,26 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
               <SelectItem value="true">Published</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Due Date</Label>
+            {form.dueDate && (
+              <button 
+                type="button" 
+                onClick={() => setForm(p => ({ ...p, dueDate: '' }))}
+                className="text-[10px] text-destructive hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <Input 
+            type="datetime-local" 
+            value={form.dueDate} 
+            onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} 
+            className="text-xs h-9"
+          />
         </div>
       </div>
 

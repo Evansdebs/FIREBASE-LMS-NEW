@@ -318,7 +318,15 @@ const getAvailableQuizzes = async (req, res) => {
         },
       },
     });
-    res.json(quizzes);
+
+    // Attach isExpired flag but keep quiz visible so student sees "Closed" state
+    const now = new Date();
+    const enriched = quizzes.map(q => ({
+      ...q,
+      isExpired: q.dueDate ? new Date(q.dueDate) < now : false,
+    }));
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: 'Server error.' });
   }
@@ -336,6 +344,11 @@ const startQuiz = async (req, res) => {
     });
     if (!quiz) return res.status(404).json({ error: 'Quiz not found.' });
     if (!quiz.isPublished) return res.status(403).json({ error: 'Quiz is not published yet.' });
+
+    // Block if past due date
+    if (quiz.dueDate && new Date(quiz.dueDate) < new Date()) {
+      return res.status(403).json({ error: 'This quiz has closed. The due date has passed.' });
+    }
 
     // Check attempt limit
     const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
