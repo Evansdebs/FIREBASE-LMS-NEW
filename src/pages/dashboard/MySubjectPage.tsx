@@ -1,28 +1,31 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { 
-  BookOpen, Users, Award, FileText, Plus, Search, 
-  Trash2, Upload, Calendar, ChevronRight, Video,
-  Clock, Download, Edit, Loader2, Sparkles, FolderOpen,
-  Mail, Play, Eye, Book, Check, ExternalLink
+import {
+  BookOpen, Users, Award, FileText, Plus,
+  Trash2, Upload, ChevronRight,
+  Clock, Download, Loader2, FolderOpen,
+  Mail, Eye, Book, Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { jsPDF } from 'jspdf';
+import MaterialViewer from '@/components/dashboard/MaterialViewer';
+import EditMaterialModal from '@/components/dashboard/EditMaterialModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default function MySubjectPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  
+
   const [courses, setCourses] = useState<any[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [courseDetails, setCourseDetails] = useState<any>(null);
@@ -34,7 +37,9 @@ export default function MySubjectPage() {
   // Modals state
   const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
-  
+  const [viewerMaterial, setViewerMaterial] = useState<any | null>(null);
+  const [editMaterial, setEditMaterial] = useState<any | null>(null);
+
   // Forms state
   const [moduleForm, setModuleForm] = useState({ title: '', description: '', orderIndex: '0' });
   const [materialForm, setMaterialForm] = useState({ title: '', type: 'PDF', externalUrl: '', topicId: '', textContent: '', description: '' });
@@ -223,15 +228,23 @@ export default function MySubjectPage() {
 
   const handleDownload = async (resource: any) => {
     const url = resource.fileUrl || resource.externalUrl || resource.filePath || '';
-    if (!url || url === 'text-content') {
-      const blob = new Blob([resource.textContent || ''], { type: 'text/plain' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${resource.fileName || resource.title || 'note'}.txt`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+
+    // TEXT type → generate PDF via jsPDF
+    if (!url || url === 'text-content' || resource.type === 'TEXT') {
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const name = resource.title || resource.fileName || 'Study Notes';
+      const content = resource.textContent || '';
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text(name, 40, 50);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      const lines = doc.splitTextToSize(content, 515);
+      doc.text(lines, 40, 80);
+      doc.save(`${name}.pdf`);
       return;
     }
+
     const isExternal = url.startsWith('http');
     const fullUrl = isExternal ? url : `${API_BASE}/${url}`;
     try {
@@ -339,7 +352,7 @@ export default function MySubjectPage() {
                 </Button>
                 <Button onClick={() => {
                   if (courseDetails?.topics?.length === 0) {
-                    toast({ title: 'Curriculum Empty', description: 'Create at least one module first before adding resources.', variant: 'warning' });
+                    toast({ title: 'Curriculum Empty', description: 'Create at least one module first before adding resources.', variant: 'default' });
                     return;
                   }
                   setMaterialForm(prev => ({ ...prev, topicId: courseDetails.topics[0].id.toString() }));
@@ -388,8 +401,8 @@ export default function MySubjectPage() {
                 onClick={() => setActiveTab(t.id as any)}
                 className={cn(
                   "px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap transition-all flex items-center gap-2",
-                  activeTab === t.id 
-                    ? "border-primary text-primary" 
+                  activeTab === t.id
+                    ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground hover:text-foreground hover:border-border/60"
                 )}
               >
@@ -465,7 +478,7 @@ export default function MySubjectPage() {
                               </Button>
                             </div>
                           </CardHeader>
-                          
+
                           <CardContent className="p-4 pt-4">
                             {topic.materials?.length === 0 ? (
                               <p className="text-xs font-semibold text-muted-foreground/60 italic py-2 pl-2">
@@ -492,7 +505,15 @@ export default function MySubjectPage() {
                                     </div>
 
                                     <div className="flex items-center gap-1">
-                                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDownload(mat)} title="Download file">
+                                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setViewerMaterial(mat)} title="View file">
+                                        <Eye className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+                                      </Button>
+                                      {(user?.role === 'teacher' || user?.role === 'super_admin') && (
+                                        <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-500 hover:bg-blue-500/10" onClick={() => setEditMaterial(mat)} title="Edit material">
+                                          <Pencil className="w-3.5 h-3.5" />
+                                        </Button>
+                                      )}
+                                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDownload(mat)} title="Download">
                                         <Download className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
                                       </Button>
                                       <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => handleDeleteMaterial(mat.id)} title="Remove file">
@@ -549,9 +570,9 @@ export default function MySubjectPage() {
                               <div className="text-xs text-muted-foreground">
                                 Submissions: <b className="text-foreground">{assignment._count?.submissions || 0} students</b>
                               </div>
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
+                              <Button
+                                variant="outline"
+                                size="sm"
                                 className="h-8 font-bold text-xs gap-1 border-primary/20 text-primary hover:bg-primary/5"
                                 onClick={() => window.location.href = `/dashboard/gradebook`}
                               >
@@ -605,9 +626,9 @@ export default function MySubjectPage() {
                               <div className="text-xs text-muted-foreground">
                                 Total Attempts: <b className="text-foreground">{quiz._count?.quizAttempts || 0} submitted</b>
                               </div>
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
+                              <Button
+                                variant="outline"
+                                size="sm"
                                 className="h-8 font-bold text-xs gap-1 border-amber-500/30 text-amber-500 hover:bg-amber-500/5"
                                 onClick={() => window.location.href = `/dashboard/quizzes`}
                               >
@@ -645,7 +666,7 @@ export default function MySubjectPage() {
                         <Card key={note.id} className="border-border hover:shadow-md transition-all relative overflow-hidden h-44 flex flex-col justify-between">
                           {/* Top Spine ribbon */}
                           <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/25 to-transparent z-10" style={{ backgroundColor: note.color || '#ecc94b' }} />
-                          
+
                           <CardHeader className="pb-2 pt-3 pl-6">
                             <div className="flex items-center justify-between">
                               <Badge className="bg-primary/20 text-primary border-none text-[8px] uppercase font-bold px-1.5 py-0.5">
@@ -655,13 +676,13 @@ export default function MySubjectPage() {
                             </div>
                             <CardTitle className="text-sm font-bold truncate mt-1.5">{note.title}</CardTitle>
                           </CardHeader>
-                          
+
                           <CardContent className="pb-3 pt-0 pl-6 flex-1 overflow-hidden">
                             <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
                               {note.content}
                             </p>
                           </CardContent>
-                          
+
                           <CardFooter className="py-2 pl-6 border-t border-border/30 bg-muted/10 flex justify-between items-center text-[10px]">
                             <span>Binder: <b>{note.notebook}</b></span>
                             <Button size="sm" variant="link" className="p-0 h-auto font-bold text-[10px] text-primary" onClick={() => window.location.href = `/dashboard/notes`}>
@@ -913,6 +934,21 @@ export default function MySubjectPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Material Viewer */}
+      <MaterialViewer
+        material={viewerMaterial}
+        open={!!viewerMaterial}
+        onClose={() => setViewerMaterial(null)}
+      />
+
+      {/* Edit Material Modal */}
+      <EditMaterialModal
+        material={editMaterial}
+        open={!!editMaterial}
+        onClose={() => setEditMaterial(null)}
+        onSaved={() => { if (selectedCourseId) fetchCourseDetails(selectedCourseId); }}
+      />
     </div>
   );
 }

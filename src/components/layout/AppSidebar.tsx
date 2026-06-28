@@ -202,7 +202,7 @@ export default function AppSidebar({
         })}
 
         {/* Support desk panel for students and teachers */}
-        {!collapsed && user.role !== 'SUPER_ADMIN' && settings && (settings.supportEmail || settings.supportPhone) && (
+        {!collapsed && user.role !== 'super_admin' && settings && (settings.supportEmail || settings.supportPhone) && (
           <div className="mt-6 p-4 rounded-xl bg-sidebar-accent/30 border border-sidebar-border/10 space-y-2.5 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <p className="text-[10px] font-bold text-sidebar-primary uppercase tracking-wider">Support Desk</p>
             {settings.supportEmail && (
