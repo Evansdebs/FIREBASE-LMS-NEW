@@ -344,6 +344,37 @@ export default function QuizzesPage() {
     }
   };
 
+  const reviewQuiz = async (attemptId: number) => {
+    try {
+      setLoadingQuiz(true);
+      const res = await api.get(`/api/student/quizzes/attempts/${attemptId}`);
+      
+      const answersMap: Record<number, number> = {};
+      (res.answers || []).forEach((ans: any) => {
+        if (ans.selectedOptionId) {
+          answersMap[ans.questionId] = ans.selectedOptionId;
+        }
+      });
+
+      setActiveQuiz(res.quiz);
+      setActiveAttempt({
+        id: res.id,
+        quizId: res.quizId,
+        answers: answersMap,
+        score: res.score,
+        total: res.total,
+        submitted: true,
+        startedAt: res.submittedAt,
+        strikes: res.strikes,
+      });
+      setShowResults(true);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to load quiz review');
+    } finally {
+      setLoadingQuiz(false);
+    }
+  };
+
   const selectAnswer = (questionId: number, optionId: number) => {
     if (!activeAttempt || activeAttempt.submitted) return;
     setActiveAttempt((prev: any) => prev ? {
@@ -521,22 +552,24 @@ export default function QuizzesPage() {
                                 key={opt.id}
                                 className={cn(
                                   'flex items-center gap-3 p-3 rounded-lg border transition-all',
-                                  isCorrect && isSelected
-                                    ? 'border-success bg-success/10 text-success'
-                                    : isCorrect && !isSelected
-                                    ? 'border-destructive bg-destructive/10 text-destructive' // User requested red for correct answer when wrong
+                                  isCorrect
+                                    ? 'border-success bg-success/10 text-success font-medium'
                                     : isSelected && !isCorrect
-                                    ? 'border-border bg-muted/20 text-muted-foreground opacity-70'
+                                    ? 'border-destructive bg-destructive/10 text-destructive'
                                     : 'border-border bg-muted/5 text-muted-foreground/50'
                                 )}
                               >
                                 <span className={cn(
                                   'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0',
-                                  isCorrect && isSelected ? 'bg-success text-white' : isCorrect && !isSelected ? 'bg-destructive text-white' : 'bg-muted text-muted-foreground'
+                                  isCorrect 
+                                    ? 'bg-success text-white' 
+                                    : isSelected && !isCorrect 
+                                    ? 'bg-destructive text-white' 
+                                    : 'bg-muted text-muted-foreground'
                                 )}>{opt.optionLabel}</span>
                                 <span className="text-sm flex-1">{opt.optionText}</span>
-                                {isCorrect && isSelected && <CheckCircle className="w-4 h-4 text-success shrink-0" />}
-                                {isCorrect && !isSelected && <XCircle className="w-4 h-4 text-destructive shrink-0" />}
+                                {isCorrect && <CheckCircle className="w-4 h-4 text-success shrink-0" />}
+                                {isSelected && !isCorrect && <XCircle className="w-4 h-4 text-destructive shrink-0" />}
                               </div>
                             );
                           })}
@@ -663,14 +696,27 @@ export default function QuizzesPage() {
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Created: {new Date(quiz.createdAt).toLocaleDateString()}</span>
                 {isStudent && quiz.isPublished && (
-                  <Button size="sm" className="gap-2" onClick={() => startQuiz(quiz)}
-                    disabled={quiz.isExpired || quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)}>
-                    {quiz.isExpired
-                      ? <><Timer className="w-3.5 h-3.5" /> Closed</>
-                      : quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)
-                      ? <><CheckCircle className="w-3.5 h-3.5" /> Completed</>
-                      : <><PlayCircle className="w-3.5 h-3.5" /> Start Quiz</>}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {quiz.quizAttempts && quiz.quizAttempts.length > 0 && (
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="gap-2 text-primary border-primary/20 hover:bg-primary/5 font-semibold"
+                        onClick={() => reviewQuiz(quiz.quizAttempts[0].id)}
+                        disabled={loadingQuiz}
+                      >
+                        Review Quiz
+                      </Button>
+                    )}
+                    <Button size="sm" className="gap-2" onClick={() => startQuiz(quiz)}
+                      disabled={quiz.isExpired || quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)}>
+                      {quiz.isExpired
+                        ? <><Timer className="w-3.5 h-3.5" /> Closed</>
+                        : quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)
+                        ? <><CheckCircle className="w-3.5 h-3.5" /> Completed</>
+                        : <><PlayCircle className="w-3.5 h-3.5" /> Start Quiz</>}
+                    </Button>
+                  </div>
                 )}
                 {canManage && (
                   <div className="flex gap-2 flex-wrap">

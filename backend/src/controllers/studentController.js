@@ -312,9 +312,8 @@ const getAvailableQuizzes = async (req, res) => {
         _count: { select: { quizQuestions: true } },
         quizAttempts: { 
           where: { studentId: student.id }, 
-          orderBy: { score: 'desc' },
-          take: 1,
-          select: { score: true, total: true, submittedAt: true } 
+          orderBy: { submittedAt: 'desc' },
+          select: { id: true, score: true, total: true, submittedAt: true } 
         },
       },
     });
@@ -328,6 +327,40 @@ const getAvailableQuizzes = async (req, res) => {
 
     res.json(enriched);
   } catch (err) {
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+const getAttemptReview = async (req, res) => {
+  try {
+    const attemptId = parseInt(req.params.attemptId);
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
+    if (!student) return res.status(404).json({ error: 'Student not found.' });
+
+    const attempt = await prisma.quizAttempt.findUnique({
+      where: { id: attemptId },
+      include: {
+        answers: true,
+        quiz: {
+          include: {
+            quizQuestions: {
+              include: {
+                options: true
+              }
+            },
+            course: { select: { title: true } }
+          }
+        }
+      }
+    });
+
+    if (!attempt || attempt.studentId !== student.id) {
+      return res.status(403).json({ error: 'Unauthorized to view this attempt.' });
+    }
+
+    res.json(attempt);
+  } catch (err) {
+    console.error('Get attempt review error:', err);
     res.status(500).json({ error: 'Server error.' });
   }
 };
@@ -805,7 +838,7 @@ const addPomodoroPoints = async (req, res) => {
 module.exports = {
   getDashboard, getMyCourses, getCourseDetails, getMyMaterials,
   updateMaterialProgress,
-  getAvailableQuizzes, startQuiz, submitQuiz, recordStrike,
+  getAvailableQuizzes, startQuiz, submitQuiz, recordStrike, getAttemptReview,
   getMyAssignments, submitAssignment,
   getMyResults, getMyAttendance, getMyAchievements,
   getMyLiveClasses, getAcademicReports,
