@@ -740,43 +740,74 @@ function MCQQuestionBuilder({ questions, setQuestions }: { questions: any[]; set
     reader.readAsText(file);
   };
 
+  const [autoGrade, setAutoGrade] = useState(true);
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* Header row: title + Add Question */}
+      <div className="flex items-center justify-between gap-2">
         <Label className="text-base font-semibold">Questions ({questions.length})</Label>
         <div className="flex items-center gap-2">
-           <input
-             type="file"
-             accept=".csv"
-             className="hidden"
-             id="create-quiz-csv-import"
-             onChange={(e) => {
-               const file = e.target.files?.[0];
-               if (file) handleCSVImport(file);
-             }}
-           />
-           <Button 
-             type="button" 
-             size="sm" 
-             variant="outline" 
-             onClick={downloadCSVTemplate} 
-             className="gap-1 text-primary border-primary/30 hover:bg-primary/5"
-           >
-             <Download className="w-3 h-3" /> Download Template
-           </Button>
-           <Button 
-             type="button" 
-             size="sm" 
-             variant="outline" 
-             onClick={() => document.getElementById('create-quiz-csv-import')?.click()} 
-             className="gap-1 text-success border-success/30 hover:bg-success/5"
-           >
-             <Upload className="w-3 h-3" /> Import CSV
-           </Button>
-           <Button type="button" size="sm" variant="outline" onClick={addQuestion} className="gap-1">
-             <Plus className="w-3 h-3" /> Add Question
-           </Button>
+          <Button type="button" size="sm" variant="outline" onClick={addQuestion} className="gap-1">
+            <Plus className="w-3 h-3" /> Add Question
+          </Button>
         </div>
+      </div>
+
+      {/* CSV row: Import + Download Template below */}
+      <div className="flex flex-col gap-1">
+        <input
+          type="file"
+          accept=".csv"
+          className="hidden"
+          id="create-quiz-csv-import"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleCSVImport(file);
+          }}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => document.getElementById('create-quiz-csv-import')?.click()}
+          className="gap-1 w-full text-success border-success/30 hover:bg-success/5"
+        >
+          <Upload className="w-3 h-3" /> Bulk Import via CSV
+        </Button>
+        <button
+          type="button"
+          onClick={downloadCSVTemplate}
+          className="text-xs text-primary/70 hover:text-primary underline underline-offset-2 text-center transition-colors"
+        >
+          <Download className="w-3 h-3 inline mr-1" />Download CSV Template
+        </button>
+      </div>
+
+      {/* Auto-grade / Manual marks toggle */}
+      <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
+        <div>
+          <p className="text-sm font-medium">Marks per question</p>
+          <p className="text-xs text-muted-foreground">
+            {autoGrade ? 'System auto-assigns 1 mark per question' : 'Set marks individually on each question'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setAutoGrade(p => !p)}
+          className={cn(
+            'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none border',
+            autoGrade ? 'bg-primary border-primary' : 'bg-muted border-border'
+          )}
+          aria-label="Toggle auto grade"
+        >
+          <span
+            className={cn(
+              'inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform',
+              autoGrade ? 'translate-x-6' : 'translate-x-1'
+            )}
+          />
+        </button>
       </div>
 
       {questions.map((q, qi) => (
@@ -784,9 +815,26 @@ function MCQQuestionBuilder({ questions, setQuestions }: { questions: any[]; set
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-primary">Question {qi + 1}</span>
-              <Button type="button" size="sm" variant="ghost" className="text-destructive h-7 px-2" onClick={() => removeQuestion(qi)}>
-                <Trash2 className="w-3 h-3" />
-              </Button>
+              <div className="flex items-center gap-2">
+                {!autoGrade && (
+                  <div className="flex items-center gap-1">
+                    <Label className="text-xs text-muted-foreground whitespace-nowrap">Marks:</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={q.points ?? 1}
+                      onChange={e => updateQuestion(qi, 'points', parseInt(e.target.value) || 1)}
+                      className="w-16 h-7 text-xs text-center"
+                    />
+                  </div>
+                )}
+                {autoGrade && (
+                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">1 mark</span>
+                )}
+                <Button type="button" size="sm" variant="ghost" className="text-destructive h-7 px-2" onClick={() => removeQuestion(qi)}>
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              </div>
             </div>
 
             <Input
@@ -1030,7 +1078,7 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
           <h2 className="text-xl font-bold font-heading">Edit: {quiz.title}</h2>
           <p className="text-sm text-muted-foreground">ID: {quiz.id} • {questions.length} Questions</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-1 min-w-[160px]">
           <Input 
             type="file" 
             accept=".csv" 
@@ -1039,9 +1087,6 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) {
-                 // We pass quiz.id and the file to parent component or handle locally
-                 // Since QuizzesPage has the import function, let's wrap it.
-                 // We can use a custom event or just reach out
                  const event = new CustomEvent('importQuizCSV', { detail: { quizId: quiz.id, file } });
                  window.dispatchEvent(event);
               }
@@ -1050,18 +1095,18 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
           <Button 
             variant="outline" 
             type="button"
-            className="gap-2 border-primary/50 text-primary hover:bg-primary/10"
-            onClick={downloadCSVTemplate}
-          >
-            <Download className="w-4 h-4" /> Download Template
-          </Button>
-          <Button 
-            variant="outline" 
-            className="gap-2 border-success/50 text-success hover:bg-success/10"
+            className="gap-2 border-success/50 text-success hover:bg-success/10 w-full"
             onClick={() => document.getElementById(`csv-import-${quiz.id}`)?.click()}
           >
             <Upload className="w-4 h-4" /> Bulk Import (CSV)
           </Button>
+          <button
+            type="button"
+            onClick={downloadCSVTemplate}
+            className="text-xs text-primary/70 hover:text-primary underline underline-offset-2 text-center transition-colors"
+          >
+            <Download className="w-3 h-3 inline mr-1" />Download CSV Template
+          </button>
         </div>
       </div>
 
