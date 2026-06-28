@@ -43,9 +43,11 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Academic',
     items: [
       { icon: BookOpen, label: 'Subjects', path: '/dashboard/courses', roles: ['super_admin', 'student'], permission: 'manage_courses' },
+      { icon: LayoutDashboard, label: 'Subject Hub', path: '/dashboard/subject-hub', roles: ['teacher'] },
+      { icon: BookOpen, label: 'My Subject', path: '/dashboard/my-subject', roles: ['teacher'] },
       { icon: ClipboardList, label: 'Assignments', path: '/dashboard/assignments', roles: ['teacher', 'student'], permission: 'approve_content' },
-      { icon: HelpCircle, label: 'Quizzes', path: '/dashboard/quizzes', roles: ['super_admin', 'student'], permission: 'approve_content' },
-      { icon: BarChart3, label: 'Gradebook', path: '/dashboard/gradebook', roles: ['super_admin'], permission: 'view_all_grades' },
+      { icon: HelpCircle, label: 'Quizzes', path: '/dashboard/quizzes', roles: ['super_admin', 'teacher', 'student'], permission: 'approve_content' },
+      { icon: BarChart3, label: 'Gradebook', path: '/dashboard/gradebook', roles: ['super_admin', 'teacher'], permission: 'view_all_grades' },
       { icon: Calendar, label: 'Interactive Calendar', path: '/dashboard/calendar', roles: ['super_admin', 'teacher', 'student'] },
       { icon: Video, label: 'Live Classes', path: '/dashboard/live-classes', roles: ['super_admin', 'teacher', 'student'] },
       { icon: FlaskConical, label: 'Virtual Study Room', path: '/dashboard/study-room', roles: ['super_admin', 'teacher', 'student'] },
@@ -55,7 +57,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Resources',
     items: [
-      { icon: FolderOpen, label: 'Resource Library', path: '/dashboard/resources', roles: ['super_admin', 'student'], permission: 'manage_resources' },
+      { icon: FolderOpen, label: 'Resource Library', path: '/dashboard/resources', roles: ['super_admin', 'teacher', 'student'], permission: 'manage_resources' },
       { icon: StickyNote, label: 'My Notes', path: '/dashboard/notes', roles: ['super_admin', 'teacher', 'student'] },
       { icon: ShoppingBag, label: 'E-Store', path: '/dashboard/shop', roles: ['super_admin', 'teacher', 'student'] },
       { icon: FlaskConical, label: 'Simulation Lab', path: '/dashboard/simulations', roles: ['super_admin', 'teacher', 'student'] },
@@ -169,7 +171,11 @@ export default function AppSidebar({
                           navigate(item.path);
                           if (onClose) onClose();
                         }}
-                        title={collapsed ? item.label : undefined}
+                        title={collapsed ? (
+                          user.role === 'teacher' && item.label === 'Quizzes' ? 'Create Quiz' : 
+                          user.role === 'teacher' && item.label === 'Gradebook' ? 'Grade Work' : 
+                          item.label
+                        ) : undefined}
                         className={cn(
                           'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150',
                           collapsed ? "justify-center px-0" : "justify-start",
@@ -179,7 +185,13 @@ export default function AppSidebar({
                         )}
                       >
                         <item.icon className={cn("w-4 h-4 shrink-0", isActive && "text-sidebar-primary")} />
-                        {!collapsed && <span className="truncate animate-in fade-in slide-in-from-left-1 duration-300">{item.label}</span>}
+                        {!collapsed && (
+                          <span className="truncate animate-in fade-in slide-in-from-left-1 duration-300">
+                            {user.role === 'teacher' && item.label === 'Quizzes' ? 'Create Quiz' : 
+                             user.role === 'teacher' && item.label === 'Gradebook' ? 'Grade Work' : 
+                             item.label}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

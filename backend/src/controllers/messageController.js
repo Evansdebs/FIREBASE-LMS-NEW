@@ -289,8 +289,39 @@ const deleteAllMessages = async (req, res) => {
   }
 };
 
+const deleteMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const messageId = parseInt(id);
+    const userId = req.user.id;
+
+    // Check if the message exists
+    const msg = await prisma.message.findUnique({
+      where: { id: messageId }
+    });
+
+    if (!msg) {
+      return res.status(404).json({ error: 'Message not found.' });
+    }
+
+    // Only allow the sender or super admin to delete it
+    if (msg.senderId !== userId && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Unauthorized to delete this message.' });
+    }
+
+    await prisma.message.delete({
+      where: { id: messageId }
+    });
+
+    res.json({ message: 'Message deleted successfully.' });
+  } catch (err) {
+    console.error('Delete message error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
 module.exports = {
   sendMessage, getConversations, getMessages,
   getNotifications, markNotificationRead, deleteNotification, sendAnnouncement,
-  searchUsers, deleteAllMessages
+  searchUsers, deleteAllMessages, deleteMessage
 };

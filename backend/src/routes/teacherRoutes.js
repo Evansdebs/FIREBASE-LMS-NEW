@@ -26,6 +26,7 @@ router.get('/gradebook', cacheMiddleware, teacherController.getGradebook);
 // Courses & Topics
 router.get('/my-courses', cacheMiddleware, teacherController.getMyCourses);
 router.get('/courses/:id', cacheMiddleware, teacherController.getCourseDetails);
+router.get('/courses/:id/overview', cacheMiddleware, teacherController.getCourseOverview);
 router.post('/topics', teacherController.createTopic);
 router.put('/topics/:id', teacherController.updateTopic);
 router.delete('/topics/:id', teacherController.deleteTopic);

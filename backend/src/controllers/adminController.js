@@ -1040,6 +1040,7 @@ const getQuizById = async (req, res) => {
         quizQuestions: {
           include: { options: true }
         },
+        quizClasses: true,
         _count: { select: { quizAttempts: true } },
       },
     });
@@ -1233,7 +1234,7 @@ const importQuizFromCSV = async (req, res) => {
 
 const createQuiz = async (req, res) => {
   try {
-    const { title, courseId, creatorId, timeLimit, attemptLimit, questions } = req.body;
+    const { title, courseId, creatorId, timeLimit, attemptLimit, questions, classIds } = req.body;
     
     let tid = creatorId;
     if (!tid) {
@@ -1264,51 +1265,84 @@ const createQuiz = async (req, res) => {
       }
     }
     
-    const quiz = await prisma.quiz.create({
-      data: { 
-        title, 
-        duration: parseInt(timeLimit) || 30,
-        attemptLimit: parseInt(attemptLimit) || 1,
-        courseId: parseInt(courseId), 
-        createdBy: parseInt(tid),
-      }
-    });
-    
-    // Create questions and options
-    if (questions && questions.length > 0) {
-      for (const q of questions) {
-        const question = await prisma.quizQuestion.create({
-          data: {
-            quizId: quiz.id,
-            questionText: q.questionText,
-            points: q.points || 1,
-          }
-        });
-        for (const opt of q.options) {
-          await prisma.quizOption.create({
-            data: {
-              questionId: question.id,
-              optionLabel: opt.optionLabel,
-              optionText: opt.optionText,
-              isCorrect: opt.isCorrect || false,
-            }
+    const fullQuiz = await prisma.$transaction(async (tx) => {
+      const quiz = await tx.quiz.create({
+        data: { 
+          title, 
+          duration: parseInt(timeLimit) || 30,
+          attemptLimit: parseInt(attemptLimit) || 1,
+          courseId: parseInt(courseId), 
+          createdBy: parseInt(tid),
+        }
+      });
+      
+      if (classIds && Array.isArray(classIds)) {
+        for (const cid of classIds) {
+          await tx.quizClass.create({
+            data: { quizId: quiz.id, classId: parseInt(cid) }
           });
         }
       }
-    }
-    
-    const fullQuiz = await prisma.quiz.findUnique({
-      where: { id: quiz.id },
-      include: {
-        quizQuestions: { include: { options: true } },
-        course: { include: { courseClasses: { include: { class: true } }, subject: true } },
-        creator: { include: { user: { select: { name: true } } } },
+
+      // Create questions and options
+      if (questions && questions.length > 0) {
+        for (const q of questions) {
+          const question = await tx.quizQuestion.create({
+            data: {
+              quizId: quiz.id,
+              questionText: q.questionText,
+              points: q.points || 1,
+            }
+          });
+          for (const opt of q.options) {
+            await tx.quizOption.create({
+              data: {
+                questionId: question.id,
+                optionLabel: opt.optionLabel,
+                optionText: opt.optionText,
+                isCorrect: opt.isCorrect || false,
+              }
+            });
+          }
+        }
       }
+
+      const fetched = await tx.quiz.findUnique({
+        where: { id: quiz.id },
+        include: {
+          quizQuestions: { include: { options: true } },
+          course: { include: { courseClasses: { include: { class: true } }, subject: true } },
+          creator: { include: { user: { select: { name: true } } } },
+          quizClasses: true,
+        }
+      });
+
+      // Targeted Notifications: Notify students in those classes
+      if (classIds && classIds.length > 0) {
+        const targetStudents = await tx.student.findMany({
+          where: { classId: { in: classIds.map(id => parseInt(id)) } },
+          select: { userId: true }
+        });
+        if (targetStudents.length > 0) {
+          await tx.notification.createMany({
+            data: targetStudents.map(s => ({
+              userId: s.userId,
+              title: 'New Quiz Posted',
+              message: `A new quiz "${title}" has been posted for ${fetched.course.subject.name}.`,
+              type: 'ACADEMIC',
+              isGlobal: false
+            }))
+          });
+        }
+      }
+
+      await tx.auditLog.create({
+        data: { userId: req.user.id, action: 'Create Quiz', details: `Admin created quiz ${quiz.id} with ${questions?.length || 0} questions` }
+      });
+
+      return fetched;
     });
-    
-    await prisma.auditLog.create({
-      data: { userId: req.user.id, action: 'Create Quiz', details: `Admin created quiz ${quiz.id} with ${questions?.length || 0} questions` }
-    });
+
     res.status(201).json(fullQuiz);
   } catch (err) {
     console.error('Create quiz error:', err);
@@ -1320,7 +1354,7 @@ const updateQuiz = async (req, res) => {
   try {
     const { id } = req.params;
     const quizId = parseInt(id);
-    const { title, courseId, timeLimit, attemptLimit, isPublished, questions } = req.body;
+    const { title, courseId, timeLimit, attemptLimit, isPublished, questions, classIds } = req.body;
     
     const data = {};
     if (title) data.title = title;
@@ -1329,11 +1363,8 @@ const updateQuiz = async (req, res) => {
     if (attemptLimit !== undefined) data.attemptLimit = parseInt(attemptLimit);
     if (isPublished !== undefined) data.isPublished = isPublished;
     
-    await prisma.quiz.update({ where: { id: quizId }, data });
-    
-    // If questions are provided, replace all existing questions
+    // If questions are provided, validate
     if (questions && questions.length > 0) {
-      // Validate
       for (let i = 0; i < questions.length; i++) {
         const q = questions[i];
         if (!q.questionText) {
@@ -1347,35 +1378,52 @@ const updateQuiz = async (req, res) => {
           return res.status(400).json({ error: `Question ${i + 1}: Exactly one correct answer is required.` });
         }
       }
+    }
+
+    const fullQuiz = await prisma.$transaction(async (tx) => {
+      await tx.quiz.update({ where: { id: quizId }, data });
       
-      // Delete existing questions (cascades to options)
-      await prisma.quizQuestion.deleteMany({ where: { quizId } });
-      
-      // Recreate
-      for (const q of questions) {
-        const question = await prisma.quizQuestion.create({
-          data: { quizId, questionText: q.questionText, points: q.points || 1 }
-        });
-        for (const opt of q.options) {
-          await prisma.quizOption.create({
-            data: {
-              questionId: question.id,
-              optionLabel: opt.optionLabel,
-              optionText: opt.optionText,
-              isCorrect: opt.isCorrect || false,
-            }
+      if (classIds && Array.isArray(classIds)) {
+        await tx.quizClass.deleteMany({ where: { quizId } });
+        for (const cid of classIds) {
+          await tx.quizClass.create({
+            data: { quizId, classId: parseInt(cid) }
           });
         }
       }
-    }
-    
-    const fullQuiz = await prisma.quiz.findUnique({
-      where: { id: quizId },
-      include: {
-        quizQuestions: { include: { options: true } },
-        course: { include: { courseClasses: { include: { class: true } }, subject: true } },
-        creator: { include: { user: { select: { name: true } } } },
+      
+      // If questions are provided, replace all existing questions
+      if (questions && questions.length > 0) {
+        // Delete existing questions (cascades to options)
+        await tx.quizQuestion.deleteMany({ where: { quizId } });
+        
+        // Recreate
+        for (const q of questions) {
+          const question = await tx.quizQuestion.create({
+            data: { quizId, questionText: q.questionText, points: q.points || 1 }
+          });
+          for (const opt of q.options) {
+            await tx.quizOption.create({
+              data: {
+                questionId: question.id,
+                optionLabel: opt.optionLabel,
+                optionText: opt.optionText,
+                isCorrect: opt.isCorrect || false,
+              }
+            });
+          }
+        }
       }
+
+      return tx.quiz.findUnique({
+        where: { id: quizId },
+        include: {
+          quizQuestions: { include: { options: true } },
+          course: { include: { courseClasses: { include: { class: true } }, subject: true } },
+          creator: { include: { user: { select: { name: true } } } },
+          quizClasses: true,
+        }
+      });
     });
     
     await prisma.auditLog.create({

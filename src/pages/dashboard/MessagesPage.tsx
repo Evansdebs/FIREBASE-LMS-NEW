@@ -110,6 +110,40 @@ export default function MessagesPage() {
     }
   };
 
+  const longPressTimer = useRef<any>(null);
+  const isLongPressActive = useRef(false);
+
+  const handleDeleteMessage = async (messageId: number, senderId: number) => {
+    if (senderId !== user?.id && user?.role !== 'super_admin') {
+      return;
+    }
+    if (window.confirm("Delete this message?")) {
+      try {
+        await api.delete(`/api/messages/${messageId}`);
+        toast.success("Message deleted");
+        setMessages(prev => prev.filter(m => m.id !== messageId));
+        fetchConversations();
+      } catch (err: any) {
+        toast.error(err.message || "Failed to delete message");
+      }
+    }
+  };
+
+  const startPress = (messageId: number, senderId: number) => {
+    if (senderId !== user?.id && user?.role !== 'super_admin') return;
+    isLongPressActive.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPressActive.current = true;
+      handleDeleteMessage(messageId, senderId);
+    }, 600);
+  };
+
+  const endPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+    }
+  };
+
   const filteredConvs = conversations.filter(c =>
     (c.partner?.name || '').toLowerCase().includes(searchConv.toLowerCase())
   );
@@ -337,12 +371,22 @@ export default function MessagesPage() {
                     <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
                   ) : messages.map(msg => (
                     <div key={msg.id} className={cn('flex', msg.senderId === user?.id ? 'justify-end' : 'justify-start')}>
-                      <div className={cn(
-                        'max-w-[70%] rounded-2xl px-4 py-2',
-                        msg.senderId === user?.id
-                          ? 'bg-primary text-primary-foreground rounded-br-md shadow-sm'
-                          : 'bg-muted text-foreground rounded-bl-md shadow-sm border border-border/50'
-                      )}>
+                      <div
+                        onMouseDown={() => startPress(msg.id, msg.senderId)}
+                        onMouseUp={endPress}
+                        onMouseLeave={endPress}
+                        onMouseMove={endPress}
+                        onTouchStart={() => startPress(msg.id, msg.senderId)}
+                        onTouchEnd={endPress}
+                        onTouchMove={endPress}
+                        className={cn(
+                          'max-w-[70%] rounded-2xl px-4 py-2 cursor-pointer select-none transition-all active:scale-[0.98]',
+                          msg.senderId === user?.id
+                            ? 'bg-primary text-primary-foreground rounded-br-md shadow-sm hover:bg-primary/95'
+                            : 'bg-muted text-foreground rounded-bl-md shadow-sm border border-border/50 hover:bg-muted/95'
+                        )}
+                        title={(msg.senderId === user?.id || user?.role === 'super_admin') ? "Long press to delete message" : undefined}
+                      >
                         <p className="text-sm break-words whitespace-pre-wrap">{msg.message}</p>
                         <p className={cn('text-[10px] mt-1 text-right', msg.senderId === user?.id ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
                           {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

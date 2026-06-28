@@ -33,6 +33,8 @@ import SimulationsPage from "./pages/dashboard/SimulationsPage";
 import AITutorPage from "./pages/dashboard/AITutorPage";
 import DeveloperInfo from "./components/dashboard/DeveloperInfo";
 import ChangePassword from "./pages/auth/ChangePassword";
+import MySubjectPage from "./pages/dashboard/MySubjectPage";
+import SubjectOverviewPage from "./pages/dashboard/SubjectOverviewPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -53,6 +55,8 @@ const App = () => (
               <Route path="users" element={<UserManagement />} />
               <Route path="permissions" element={<PermissionsPage />} />
               <Route path="courses" element={<CoursesPage />} />
+              <Route path="my-subject" element={<MySubjectPage />} />
+              <Route path="subject-hub" element={<SubjectOverviewPage />} />
               <Route path="assignments" element={<AssignmentsPage />} />
               <Route path="academic" element={<AcademicPage />} />
               <Route path="quizzes" element={<QuizzesPage />} />

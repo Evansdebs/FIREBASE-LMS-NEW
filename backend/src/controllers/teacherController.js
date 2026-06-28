@@ -310,6 +310,159 @@ const deleteTopic = async (req, res) => {
   }
 };
 
+// ─── COURSE OVERVIEW (Subject Hub — all-in-one teacher view) ──────────────────
+const getCourseOverview = async (req, res) => {
+  try {
+    const courseId = parseInt(req.params.id);
+    const teacher = await prisma.teacher.findUnique({ where: { userId: req.user.id } });
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found.' });
+
+    // Ownership check — teacher must be assigned to this course
+    const ownership = await prisma.courseTeacher.findUnique({
+      where: { courseId_teacherId: { courseId, teacherId: teacher.id } }
+    });
+    if (!ownership) return res.status(403).json({ error: 'You are not assigned to this course.' });
+
+    // Parallel fetch — all reads, no writes; Prisma serialises within the same connection pool snapshot
+    const [course, assignments, quizzes, liveClasses, attendanceRecords] = await Promise.all([
+      prisma.course.findUnique({
+        where: { id: courseId },
+        include: {
+          subject: true,
+          topics: {
+            include: { materials: { include: { progress: true } } },
+            orderBy: { orderIndex: 'asc' }
+          },
+          courseClasses: {
+            include: {
+              class: {
+                include: {
+                  students: {
+                    include: { user: { select: { id: true, name: true, email: true, gender: true, lastLogin: true } } }
+                  }
+                }
+              }
+            }
+          },
+          notes: { where: { isShared: true }, orderBy: { updatedAt: 'desc' } },
+          _count: { select: { topics: true, assignments: true, quizzes: true } }
+        }
+      }),
+      prisma.assignment.findMany({
+        where: { courseId },
+        include: {
+          submissions: {
+            include: {
+              student: { include: { user: { select: { id: true, name: true, email: true } } } }
+            }
+          },
+          assignmentClasses: { include: { class: true } },
+          _count: { select: { submissions: true } }
+        },
+        orderBy: { deadline: 'asc' }
+      }),
+      prisma.quiz.findMany({
+        where: { courseId },
+        include: {
+          quizQuestions: { include: { options: true } },
+          quizAttempts: {
+            include: {
+              student: { include: { user: { select: { id: true, name: true, email: true } } } }
+            },
+            orderBy: { submittedAt: 'desc' }
+          },
+          quizClasses: { include: { class: true } },
+          _count: { select: { quizQuestions: true, quizAttempts: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.liveClass.findMany({
+        where: { teacherId: teacher.id },
+        include: { class: true },
+        orderBy: { scheduleDate: 'desc' }
+      }),
+      // Attendance for all classes attached to this course
+      (async () => {
+        const courseClassLinks = await prisma.courseClass.findMany({ where: { courseId } });
+        const classIds = courseClassLinks.map(cc => cc.classId);
+        if (classIds.length === 0) return [];
+        return prisma.attendance.findMany({
+          where: { classId: { in: classIds } },
+          include: {
+            student: { include: { user: { select: { id: true, name: true } } } }
+          },
+          orderBy: { date: 'desc' },
+          take: 500  // cap for performance
+        });
+      })()
+    ]);
+
+    if (!course) return res.status(404).json({ error: 'Course not found.' });
+
+    // ── Compute per-student stats for the gradebook tab ──
+    const studentMap = {};
+    quizzes.forEach(quiz => {
+      quiz.quizAttempts.forEach(attempt => {
+        const sid = attempt.studentId;
+        if (!studentMap[sid]) {
+          studentMap[sid] = {
+            id: sid,
+            name: attempt.student?.user?.name || 'Unknown',
+            email: attempt.student?.user?.email || '',
+            quizScores: [],
+            totalAssignments: 0,
+            gradedAssignments: 0,
+          };
+        }
+        const pct = attempt.total > 0 ? (attempt.score / attempt.total) * 100 : attempt.score;
+        studentMap[sid].quizScores.push(pct);
+      });
+    });
+    assignments.forEach(assignment => {
+      assignment.submissions.forEach(sub => {
+        const sid = sub.studentId;
+        if (!studentMap[sid]) {
+          studentMap[sid] = {
+            id: sid,
+            name: sub.student?.user?.name || 'Unknown',
+            email: sub.student?.user?.email || '',
+            quizScores: [],
+            totalAssignments: 0,
+            gradedAssignments: 0,
+          };
+        }
+        studentMap[sid].totalAssignments++;
+        if (sub.grade !== null) studentMap[sid].gradedAssignments++;
+      });
+    });
+    const gradebookRows = Object.values(studentMap).map(s => {
+      const avg = s.quizScores.length > 0
+        ? Math.round(s.quizScores.reduce((a, b) => a + b, 0) / s.quizScores.length)
+        : null;
+      const letter = avg === null ? 'N/A' : avg >= 90 ? 'A' : avg >= 80 ? 'B' : avg >= 70 ? 'C' : avg >= 60 ? 'D' : 'F';
+      return { ...s, quizAvg: avg, letterGrade: letter };
+    });
+
+    res.json({
+      course,
+      assignments,
+      quizzes,
+      liveClasses,
+      attendanceRecords,
+      gradebookRows,
+      meta: {
+        totalStudents: course.courseClasses.reduce((acc, cc) => acc + cc.class.students.length, 0),
+        totalMaterials: course.topics.reduce((acc, t) => acc + t.materials.length, 0),
+        totalSubmissions: assignments.reduce((acc, a) => acc + a._count.submissions, 0),
+        pendingGrading: assignments.reduce((acc, a) => acc + a.submissions.filter(s => s.grade === null).length, 0),
+      }
+    });
+  } catch (err) {
+    logError('getCourseOverview error', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
 // ─── MATERIAL UPLOADS (Resource Library) ──────────────────
 const getMyMaterials = async (req, res) => {
   try {
@@ -637,7 +790,8 @@ const getQuizById = async (req, res) => {
       where: { id: parseInt(req.params.id) },
       include: {
         quizQuestions: { include: { options: true } },
-        course: { include: { subject: true } }
+        course: { include: { subject: true } },
+        quizClasses: true
       },
     });
     if (!quiz) return res.status(404).json({ error: 'Quiz not found.' });
@@ -795,19 +949,42 @@ const getAssignmentSubmissions = async (req, res) => {
 const gradeSubmission = async (req, res) => {
   try {
     const { grade, feedback } = req.body;
-    const submission = await prisma.submission.update({
-      where: { id: parseInt(req.params.id) },
-      data: { grade: parseFloat(grade), feedback },
-      include: { student: { include: { user: { select: { name: true } } } } }
-    });
+    const submissionId = parseInt(req.params.id);
 
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'SUBMISSION_GRADE',
-        details: `Graded student submission (Student: ${submission.student?.user?.name || 'N/A'}, Grade: ${grade})`,
-        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+    // ── ACID transaction: update grade + notify student + audit log ──
+    const submission = await prisma.$transaction(async (tx) => {
+      const sub = await tx.submission.update({
+        where: { id: submissionId },
+        data: { grade: parseFloat(grade), feedback },
+        include: {
+          student: { include: { user: { select: { id: true, name: true } } } },
+          assignment: { select: { title: true } }
+        }
+      });
+
+      // Notify the student about their grade
+      if (sub.student?.user?.id) {
+        await tx.notification.create({
+          data: {
+            userId: sub.student.user.id,
+            type: 'GRADE',
+            title: 'Assignment Graded',
+            message: `Your submission for "${sub.assignment?.title || 'an assignment'}" has been graded. Score: ${grade}.`,
+            isGlobal: false
+          }
+        });
       }
+
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'SUBMISSION_GRADE',
+          details: `Graded submission ID ${submissionId} (Student: ${sub.student?.user?.name || 'N/A'}, Grade: ${grade})`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
+
+      return sub;
     });
 
     res.json(submission);
@@ -891,34 +1068,64 @@ const exportAssignmentGrades = async (req, res) => {
 const markAttendance = async (req, res) => {
   try {
     const { classId, date, records } = req.body;
-    const results = [];
-    for (const record of records) {
-      const att = await prisma.attendance.upsert({
-        where: {
-          studentId_classId_date: {
+    if (!classId || !date || !Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ error: 'classId, date, and records[] are required.' });
+    }
+    const parsedDate = new Date(date);
+
+    // ── ACID transaction: all upserts + audit log + notifications atomically ──
+    const results = await prisma.$transaction(async (tx) => {
+      const upserted = [];
+      for (const record of records) {
+        const att = await tx.attendance.upsert({
+          where: {
+            studentId_classId_date: {
+              studentId: parseInt(record.studentId),
+              classId: parseInt(classId),
+              date: parsedDate,
+            },
+          },
+          update: { status: record.status },
+          create: {
             studentId: parseInt(record.studentId),
             classId: parseInt(classId),
-            date: new Date(date),
+            date: parsedDate,
+            status: record.status,
           },
-        },
-        update: { status: record.status },
-        create: {
-          studentId: parseInt(record.studentId),
-          classId: parseInt(classId),
-          date: new Date(date),
-          status: record.status,
-        },
-      });
-      results.push(att);
-    }
-
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'ATTENDANCE_MARK',
-        details: `Recorded attendance for Class ID: ${classId} on Date: ${date} (${records.length} records)`,
-        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        });
+        upserted.push(att);
       }
+
+      // Fetch student userIds so we can notify them
+      const studentUserIds = await tx.student.findMany({
+        where: { id: { in: records.map(r => parseInt(r.studentId)) } },
+        select: { userId: true }
+      });
+
+      // Write per-student notifications inside the same transaction
+      if (studentUserIds.length > 0) {
+        const dateStr = parsedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        await tx.notification.createMany({
+          data: studentUserIds.map(s => ({
+            userId: s.userId,
+            type: 'ATTENDANCE',
+            title: 'Attendance Recorded',
+            message: `Your attendance for ${dateStr} has been marked by your teacher.`,
+            isGlobal: false
+          }))
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'ATTENDANCE_MARK',
+          details: `Marked attendance for Class ID: ${classId} on ${date} (${records.length} records)`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
+
+      return upserted;
     });
 
     res.json({ message: 'Attendance recorded.', records: results });
@@ -1477,7 +1684,8 @@ const importQuizFromCSV = async (req, res) => {
 
 module.exports = {
   getDashboard, getRiskReport,
-  getMyCourses, getCourseDetails, createTopic, updateTopic, deleteTopic,
+  getMyCourses, getCourseDetails, getCourseOverview,
+  createTopic, updateTopic, deleteTopic,
   getMyMaterials, uploadMaterial, updateMaterial, deleteMaterial,
   createQuiz, updateQuiz, deleteQuiz, getQuizById, getQuizResults,
   createAssignment, updateAssignment, getAssignmentSubmissions, gradeSubmission, deleteAssignment, exportAssignmentGrades,

@@ -24,4 +24,7 @@ router.post('/announcements', messageController.sendAnnouncement);
 // Administrative (Delete all messages)
 router.delete('/delete-all', admin, messageController.deleteAllMessages);
 
+// Personal Messages Deletion
+router.delete('/:id', messageController.deleteMessage);
+
 module.exports = router;
