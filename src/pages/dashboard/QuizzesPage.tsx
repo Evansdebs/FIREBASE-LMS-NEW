@@ -21,6 +21,48 @@ import { toast } from 'sonner';
 
 const LABELS = ['A', 'B', 'C', 'D'];
 
+const downloadCSVTemplate = () => {
+  const headers = [
+    'Question Text',
+    'Points',
+    'Option A',
+    'A Correct',
+    'Option B',
+    'B Correct',
+    'Option C',
+    'C Correct',
+    'Option D',
+    'D Correct'
+  ];
+  const sampleRow = [
+    'What is the capital of France?',
+    '1',
+    'Paris',
+    'YES',
+    'London',
+    'NO',
+    'Berlin',
+    'NO',
+    'Rome',
+    'NO'
+  ];
+  const csvContent = [
+    headers.join(','),
+    sampleRow.map(val => `"${val.replace(/"/g, '""')}"`).join(',')
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'quiz_import_template.csv');
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  toast.success('Template downloaded successfully!');
+};
+
 export default function QuizzesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'super_admin';
@@ -717,6 +759,15 @@ function MCQQuestionBuilder({ questions, setQuestions }: { questions: any[]; set
              type="button" 
              size="sm" 
              variant="outline" 
+             onClick={downloadCSVTemplate} 
+             className="gap-1 text-primary border-primary/30 hover:bg-primary/5"
+           >
+             <Download className="w-3 h-3" /> Download Template
+           </Button>
+           <Button 
+             type="button" 
+             size="sm" 
+             variant="outline" 
              onClick={() => document.getElementById('create-quiz-csv-import')?.click()} 
              className="gap-1 text-success border-success/30 hover:bg-success/5"
            >
@@ -996,6 +1047,14 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
               }
             }}
           />
+          <Button 
+            variant="outline" 
+            type="button"
+            className="gap-2 border-primary/50 text-primary hover:bg-primary/10"
+            onClick={downloadCSVTemplate}
+          >
+            <Download className="w-4 h-4" /> Download Template
+          </Button>
           <Button 
             variant="outline" 
             className="gap-2 border-success/50 text-success hover:bg-success/10"
