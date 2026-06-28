@@ -1590,6 +1590,104 @@ const getGradebook = async (req, res) => {
   }
 };
 
+const getStudentReportCardData = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      include: {
+        user: { select: { name: true, email: true } },
+        class: true
+      }
+    });
+
+    if (!student) return res.status(404).json({ error: 'Student not found.' });
+
+    // 1. Quiz Attempts (best score per quiz)
+    const quizAttempts = await prisma.quizAttempt.findMany({
+      where: { studentId },
+      include: {
+        quiz: { include: { course: { select: { title: true, subject: { select: { name: true } } } } } }
+      },
+      orderBy: { submittedAt: 'desc' }
+    });
+
+    const bestQuizzes = {};
+    quizAttempts.forEach(attempt => {
+      const qid = attempt.quizId;
+      if (!bestQuizzes[qid] || attempt.score > bestQuizzes[qid].score) {
+        bestQuizzes[qid] = attempt;
+      }
+    });
+
+    // 2. Assignment Submissions
+    const submissions = await prisma.submission.findMany({
+      where: { studentId },
+      include: {
+        assignment: { include: { course: { select: { title: true, subject: { select: { name: true } } } } } }
+      },
+      orderBy: { submittedAt: 'desc' }
+    });
+
+    // 3. Attendance
+    const attendance = await prisma.attendance.findMany({
+      where: { studentId },
+    });
+
+    const totalAttendance = attendance.length;
+    const presentAttendance = attendance.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
+    const attendancePercentage = totalAttendance > 0 ? Math.round((presentAttendance / totalAttendance) * 100) : 100;
+
+    // 4. Achievements
+    const achievements = await prisma.achievement.findMany({
+      where: { studentId },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      student: {
+        id: student.id,
+        name: student.user.name,
+        email: student.user.email,
+        className: student.class?.name || 'N/A',
+        points: student.points
+      },
+      quizzes: Object.values(bestQuizzes).map((q) => ({
+        title: q.quiz.title,
+        subject: q.quiz.course?.subject?.name || 'N/A',
+        score: q.score,
+        total: q.total,
+        percentage: q.total > 0 ? Math.round((q.score / q.total) * 100) : 0,
+        submittedAt: q.submittedAt
+      })),
+      assignments: submissions.map(s => ({
+        title: s.assignment.title,
+        subject: s.assignment.course?.subject?.name || 'N/A',
+        grade: s.grade,
+        maxScore: s.assignment.maxScore,
+        percentage: s.assignment.maxScore > 0 && s.grade !== null ? Math.round((s.grade / s.assignment.maxScore) * 100) : null,
+        submittedAt: s.submittedAt
+      })),
+      attendance: {
+        total: totalAttendance,
+        present: presentAttendance,
+        percentage: attendancePercentage,
+      },
+      achievements: achievements.map(a => ({
+        title: a.title,
+        description: a.description,
+        points: a.points,
+        badge: a.badge,
+        createdAt: a.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error('Get student report card details error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
 // ─── MATERIALS (Resource Library) ────────────────────────
 const getMaterials = async (req, res) => {
   try {
@@ -1992,7 +2090,7 @@ module.exports = {
   getQuizzes, getQuizById, exportQuizToWord, exportQuizToCSV, importQuizFromCSV, createQuiz, updateQuiz, deleteQuiz,
   getAssignments,
   getNotifications, createNotification, deleteNotification,
-  getLiveClasses, getGradebook, 
+  getLiveClasses, getGradebook, getStudentReportCardData, 
   getMaterials, createMaterial, updateMaterial, deleteMaterial,
   getRiskReport, downloadBackup, getBackups, createBackup, restoreBackup, uploadRestoreBackup, deleteBackup,
   verifyPassword, getPublicSettings, deleteAuditLog, uploadLogo

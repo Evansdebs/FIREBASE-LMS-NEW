@@ -22,6 +22,7 @@ router.get('/risk-report', teacherController.getRiskReport);
 
 // Gradebook
 router.get('/gradebook', cacheMiddleware, teacherController.getGradebook);
+router.get('/students/:studentId/report-card', teacherController.getStudentReportCardData);
 
 // Courses & Topics
 router.get('/my-courses', cacheMiddleware, teacherController.getMyCourses);

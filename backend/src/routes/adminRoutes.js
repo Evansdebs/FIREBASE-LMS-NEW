@@ -84,6 +84,7 @@ router.get('/live-classes', authorize('manage_courses'), adminController.getLive
 
 // Gradebook (Admin view)
 router.get('/gradebook', authorize('view_all_grades'), adminController.getGradebook);
+router.get('/students/:studentId/report-card', authorize('view_all_grades'), adminController.getStudentReportCardData);
 
 // Materials (Resource Library)
 router.get('/materials', authorize('manage_resources'), cacheMiddleware, adminController.getMaterials);
