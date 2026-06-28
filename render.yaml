@@ -28,7 +28,7 @@ services:
         fromService:
           type: web
           name: onereal-lms-frontend
-          property: host
+          property: hostURL
 
   # ─── FRONTEND STATIC SITE ──────────────────────────────
   - type: web
@@ -45,7 +45,7 @@ services:
         fromService:
           type: web
           name: onereal-lms-backend
-          property: host
+          property: hostURL
 
 databases:
   - name: onereal-lms-db
