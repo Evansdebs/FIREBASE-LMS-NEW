@@ -47,7 +47,7 @@ const SubjectOverviewPage: React.FC = () => {
   const handleSelect = (id: number) => {
     setSelectedCourseId(id);
     // Invalidate any stale overview data to guarantee ACID‑consistent view.
-    queryClient.invalidateQueries(["courseOverview", id]);
+    queryClient.invalidateQueries({ queryKey: ["courseOverview", id] });
   };
 
   if (coursesLoading) return <div className="loader">Loading courses…</div>;
