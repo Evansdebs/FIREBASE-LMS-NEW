@@ -5,7 +5,7 @@ services:
     env: node
     plan: free
     rootDir: backend
-    buildCommand: npm install && npx prisma generate && npx prisma db push && node prisma/seed.js
+    buildCommand: npm install && node scripts/prepare-db-prod.js && npx prisma generate && npx prisma db push && node prisma/seed.js
     startCommand: npm start
     envVars:
       - key: PORT
@@ -25,7 +25,10 @@ services:
       - key: GOOGLE_AI_KEY
         sync: false # You will be prompted to enter this in the Render dashboard
       - key: FRONTEND_URL
-        sync: false # You will be prompted to enter your frontend URL in the Render dashboard
+        fromService:
+          type: web
+          name: onereal-lms-frontend
+          property: host
 
   # ─── FRONTEND STATIC SITE ──────────────────────────────
   - type: web
@@ -39,11 +42,13 @@ services:
         type: rewrite
     envVars:
       - key: VITE_API_URL
-        sync: false # You will be prompted to enter your backend URL in the Render dashboard
+        fromService:
+          type: web
+          name: onereal-lms-backend
+          property: host
 
 databases:
   - name: onereal-lms-db
     plan: free
     databaseName: onereal_lms
     user: onereal_admin
-
