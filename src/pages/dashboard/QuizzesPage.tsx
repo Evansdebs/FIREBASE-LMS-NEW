@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { jsPDF } from 'jspdf';
 import { useAuth } from '@/lib/auth-context';
 import { Card, CardContent } from '@/components/ui/card';
@@ -7,13 +7,14 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import {
   Plus, Search, Clock, CheckCircle, XCircle, PlayCircle, Trophy,
-  AlertTriangle, Trash2, Edit, Loader2, Download, Upload, FileSpreadsheet, FileText, Calendar, Timer
+  AlertTriangle, Trash2, Edit, Loader2, Download, Upload, FileSpreadsheet, FileText, Calendar, Timer, ClipboardList
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -144,6 +145,8 @@ export default function QuizzesPage() {
   const [activeAttempt, setActiveAttempt] = useState<any | null>(null);
   const [activeQuiz, setActiveQuiz] = useState<any | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [instructionsQuiz, setInstructionsQuiz] = useState<any | null>(null);
+  const [agreedToInstructions, setAgreedToInstructions] = useState(false);
 
   // Listen for custom import event from form
   useEffect(() => {
@@ -708,7 +711,14 @@ export default function QuizzesPage() {
                         Review Quiz
                       </Button>
                     )}
-                    <Button size="sm" className="gap-2" onClick={() => startQuiz(quiz)}
+                    <Button size="sm" className="gap-2" onClick={() => {
+                      if (quiz.instructions && quiz.instructions.trim()) {
+                        setInstructionsQuiz(quiz);
+                        setAgreedToInstructions(false);
+                      } else {
+                        startQuiz(quiz);
+                      }
+                    }}
                       disabled={quiz.isExpired || quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)}>
                       {quiz.isExpired
                         ? <><Timer className="w-3.5 h-3.5" /> Closed</>
@@ -742,6 +752,59 @@ export default function QuizzesPage() {
       {!loading && filtered.length === 0 && (
         <Card className="border-border"><CardContent className="p-8 text-center text-muted-foreground">No quizzes found</CardContent></Card>
       )}
+      {/* Student Quiz Instructions Pop-up Modal */}
+      <Dialog open={!!instructionsQuiz} onOpenChange={(open) => { if (!open) setInstructionsQuiz(null); }}>
+        <DialogContent className="max-w-md border-border bg-card rounded-2xl shadow-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg font-bold flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-primary" />
+              Quiz Instructions
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="my-4 space-y-4">
+            <div className="bg-muted/30 border border-border p-4 rounded-xl max-h-[30vh] overflow-y-auto">
+              <h4 className="font-bold text-sm mb-1">{instructionsQuiz?.title}</h4>
+              <p className="text-xs text-muted-foreground mb-3">
+                Duration: {instructionsQuiz?.duration} minutes • {instructionsQuiz?.attemptLimit || 1} Attempt(s) allowed
+              </p>
+              <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                {instructionsQuiz?.instructions}
+              </div>
+            </div>
+            
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-primary/5 border border-primary/10">
+              <input 
+                type="checkbox" 
+                id="agree-checkbox" 
+                checked={agreedToInstructions} 
+                onChange={(e) => setAgreedToInstructions(e.target.checked)} 
+                className="mt-1 rounded border-border text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+              />
+              <Label htmlFor="agree-checkbox" className="text-xs text-foreground/80 leading-normal cursor-pointer select-none">
+                I have read and understood the instructions, rules, and conditions for this quiz. I agree to proceed.
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={() => setInstructionsQuiz(null)} className="flex-1 font-bold">
+              Cancel
+            </Button>
+            <Button 
+              disabled={!agreedToInstructions} 
+              onClick={() => {
+                const quizToStart = instructionsQuiz;
+                setInstructionsQuiz(null);
+                startQuiz(quizToStart);
+              }}
+              className="flex-1 font-bold gap-1"
+            >
+              <PlayCircle className="w-4 h-4" /> Start Attempt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -877,25 +940,26 @@ function MCQQuestionBuilder({ questions, setQuestions }: { questions: any[]; set
 
       {/* CSV row: Import + Download Template below */}
       <div className="flex flex-col gap-1">
-        <input
-          type="file"
-          accept=".csv"
-          className="hidden"
-          id="create-quiz-csv-import"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleCSVImport(file);
-          }}
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => document.getElementById('create-quiz-csv-import')?.click()}
-          className="gap-1 w-full text-success border-success/30 hover:bg-success/5"
-        >
-          <Upload className="w-3 h-3" /> Bulk Import via CSV
-        </Button>
+        <div className="relative w-full">
+          <input
+            type="file"
+            accept=".csv,text/csv,application/vnd.ms-excel"
+            className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleCSVImport(file);
+              e.target.value = '';
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1 w-full text-success border-success/30 hover:bg-success/5"
+          >
+            <Upload className="w-3 h-3" /> Bulk Import via CSV
+          </Button>
+        </div>
         <button
           type="button"
           onClick={downloadCSVTemplate}
@@ -1010,7 +1074,7 @@ function MCQQuestionBuilder({ questions, setQuestions }: { questions: any[]; set
 
 // ─── CREATE QUIZ FORM ─────────────────────────────────────
 function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; onRefresh: () => void; isAdmin: boolean }) {
-  const [form, setForm] = useState({ title: '', timeLimit: '30', attemptLimit: '1', courseId: '', dueDate: '' });
+  const [form, setForm] = useState({ title: '', timeLimit: '30', attemptLimit: '1', courseId: '', dueDate: '', instructions: '' });
   const [classIds, setClassIds] = useState<string[]>([]);
   const [questions, setQuestions] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
@@ -1060,6 +1124,15 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 py-2">
       <div className="space-y-2"><Label>Title</Label><Input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required /></div>
+      <div className="space-y-2">
+        <Label>Instructions (Optional)</Label>
+        <Textarea 
+          placeholder="Enter instructions students must agree to before starting the quiz..." 
+          value={form.instructions} 
+          onChange={e => setForm(p => ({ ...p, instructions: e.target.value }))}
+          className="min-h-[80px]"
+        />
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 space-y-2">
           <Label>Subject</Label>
@@ -1136,6 +1209,7 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
     courseId: quiz.courseId?.toString() || '',
     isPublished: quiz.isPublished || false,
     dueDate: quiz.dueDate ? new Date(quiz.dueDate).toISOString().substring(0, 16) : '',
+    instructions: quiz.instructions || '',
   });
 
   const [classIds, setClassIds] = useState<string[]>(
@@ -1157,18 +1231,20 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
   const [availableClasses, setAvailableClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const initialCourseId = useRef(quiz.courseId?.toString() || '');
+
   useEffect(() => {
     const endpoint = isAdmin ? '/api/admin/courses' : '/api/teacher/my-courses';
     api.get(endpoint).then(res => {
       const fetchedCourses = Array.isArray(res) ? res : res.courses || [];
       setCourses(fetchedCourses);
       
-      if (form.courseId) {
-        const course = fetchedCourses.find((c: any) => c.id.toString() === form.courseId);
+      if (initialCourseId.current) {
+        const course = fetchedCourses.find((c: any) => c.id.toString() === initialCourseId.current);
         setAvailableClasses(course?.courseClasses?.map((cc: any) => cc.class) || []);
       }
     }).catch(() => {});
-  }, [isAdmin, form.courseId]);
+  }, [isAdmin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1186,11 +1262,13 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
       setLoading(true);
       const endpoint = isAdmin ? `/api/admin/quizzes/${quiz.id}` : `/api/teacher/quizzes/${quiz.id}`;
       await api.put(endpoint, {
-        ...form,
-        classIds,
+        title: form.title,
+        instructions: form.instructions || null,
         timeLimit: parseInt(form.timeLimit),
         attemptLimit: parseInt(form.attemptLimit),
+        isPublished: form.isPublished,
         dueDate: form.dueDate || null,
+        classIds,
         questions,
       });
       toast.success('Quiz updated successfully!');
@@ -1211,27 +1289,28 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
           <p className="text-sm text-muted-foreground">ID: {quiz.id} • {questions.length} Questions</p>
         </div>
         <div className="flex flex-col gap-1 min-w-[160px]">
-          <Input 
-            type="file" 
-            accept=".csv" 
-            id={`csv-import-${quiz.id}`}
-            className="hidden" 
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                 const event = new CustomEvent('importQuizCSV', { detail: { quizId: quiz.id, file } });
-                 window.dispatchEvent(event);
-              }
-            }}
-          />
-          <Button 
-            variant="outline" 
-            type="button"
-            className="gap-2 border-success/50 text-success hover:bg-success/10 w-full"
-            onClick={() => document.getElementById(`csv-import-${quiz.id}`)?.click()}
-          >
-            <Upload className="w-4 h-4" /> Bulk Import (CSV)
-          </Button>
+          <div className="relative w-full">
+            <input 
+              type="file" 
+              accept=".csv,text/csv,application/vnd.ms-excel" 
+              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                   const event = new CustomEvent('importQuizCSV', { detail: { quizId: quiz.id, file } });
+                   window.dispatchEvent(event);
+                }
+                e.target.value = '';
+              }}
+            />
+            <Button 
+              variant="outline" 
+              type="button"
+              className="gap-2 border-success/50 text-success hover:bg-success/10 w-full"
+            >
+              <Upload className="w-4 h-4" /> Bulk Import (CSV)
+            </Button>
+          </div>
           <button
             type="button"
             onClick={downloadCSVTemplate}
@@ -1244,6 +1323,15 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
 
       <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2"><Label>Title</Label><Input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required /></div>
+      <div className="space-y-2">
+        <Label>Instructions (Optional)</Label>
+        <Textarea 
+          placeholder="Enter instructions students must agree to before starting the quiz..." 
+          value={form.instructions} 
+          onChange={e => setForm(p => ({ ...p, instructions: e.target.value }))}
+          className="min-h-[80px]"
+        />
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 space-y-2">
           <Label>Subject</Label>

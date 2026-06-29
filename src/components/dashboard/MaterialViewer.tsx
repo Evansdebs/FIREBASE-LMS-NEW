@@ -4,9 +4,9 @@
 // Express sets the correct Content-Type from the file extension automatically,
 // so the browser renders PDF as PDF, images as images, video as video, etc.
 // No HTML conversion, no forced download.
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ExternalLink, Loader2, Download } from 'lucide-react';
+import { ExternalLink, Loader2, Download, Maximize, Minimize } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -86,12 +86,47 @@ function vimeoEmbed(url: string) {
 // ── Main component ────────────────────────────────────────────────────────
 export default function MaterialViewer({ material, open, onClose }: Props) {
   const [loading, setLoading] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Reset loading state whenever we open a new file
   useEffect(() => {
     if (open && material) setLoading(true);
   }, [open, material?.id]);
+
+  // Auto-enter fullscreen when a video opens
+  useEffect(() => {
+    if (!open || !material) return;
+    const t = material.type?.toUpperCase();
+    if (t !== 'VIDEO') return;
+    // slight delay so the dialog has rendered
+    const timer = setTimeout(() => {
+      const el = containerRef.current;
+      if (el && !document.fullscreenElement) {
+        el.requestFullscreen().catch(() => {});
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [open, material?.id]);
+
+  // Track fullscreen state changes (user pressed Escape, etc.)
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      el.requestFullscreen().catch(() => {});
+    }
+  }, []);
 
   if (!material) return null;
 
@@ -101,11 +136,12 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
   const directUrl = getDirectUrl(material);
 
   // ── Render the appropriate viewer ──
+  // ── Render the appropriate viewer ──
   const renderContent = () => {
 
     // ── TEXT ── render readable prose directly in-page
     if (type === 'TEXT') return (
-      <div className="p-6 max-h-[75vh] overflow-y-auto">
+      <div className="p-6 h-full overflow-y-auto">
         <pre className="whitespace-pre-wrap text-sm font-sans leading-relaxed text-foreground bg-muted/30 rounded-xl p-5 border border-border">
           {material.textContent || '(No text content)'}
         </pre>
@@ -114,25 +150,25 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
 
     // ── IMAGE ── native <img> — browser renders original format (PNG/JPEG/GIF/WebP etc.)
     if (type === 'IMAGE') return (
-      <div className="flex items-center justify-center p-4 bg-muted/10 max-h-[80vh] overflow-auto">
+      <div className="flex items-center justify-center p-4 bg-muted/10 h-full overflow-auto">
         <img
           src={directUrl}
           alt={name}
           onLoad={() => setLoading(false)}
           onError={() => setLoading(false)}
-          className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-md"
+          className="max-w-full max-h-full object-contain rounded-lg shadow-md"
         />
       </div>
     );
 
     // ── AUDIO ── native <audio> — browser uses original format (MP3/WAV/AAC etc.)
     if (type === 'AUDIO') return (
-      <div className="p-8 flex flex-col items-center gap-4">
-        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-4xl select-none">🎵</div>
+      <div className="h-full flex flex-col items-center justify-center p-8 gap-4">
+        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-4xl select-none animate-pulse">🎵</div>
         <p className="font-semibold text-foreground text-sm">{name}</p>
         <audio
           controls
-          className="w-full mt-2"
+          className="w-full max-w-md mt-2"
           src={directUrl}
           onCanPlay={() => setLoading(false)}
           onError={() => setLoading(false)}
@@ -146,8 +182,8 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
     if (type === 'VIDEO') {
       if (isYouTube(rawPath)) return (
         <iframe
-          src={youtubeEmbed(rawPath)}
-          className="w-full h-[62vh]"
+          src={youtubeEmbed(rawPath) + '&autoplay=1'}
+          className="w-full h-full border-none"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
           allowFullScreen
           title={name}
@@ -156,8 +192,8 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
       );
       if (isVimeo(rawPath)) return (
         <iframe
-          src={vimeoEmbed(rawPath)}
-          className="w-full h-[62vh]"
+          src={vimeoEmbed(rawPath) + '?autoplay=1'}
+          className="w-full h-full border-none"
           allow="autoplay; fullscreen; picture-in-picture"
           allowFullScreen
           title={name}
@@ -167,8 +203,10 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
       // Local video file — served directly, browser plays in original format
       return (
         <video
+          ref={videoRef}
           controls
-          className="w-full max-h-[68vh] bg-black"
+          autoPlay
+          className="w-full h-full bg-black object-contain"
           src={directUrl}
           onCanPlay={() => setLoading(false)}
           onError={() => setLoading(false)}
@@ -185,7 +223,7 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
       <iframe
         ref={iframeRef}
         src={`${directUrl}#toolbar=1&navpanes=1&view=FitH`}
-        className="w-full h-[78vh]"
+        className="w-full h-full"
         title={name}
         onLoad={() => setLoading(false)}
       />
@@ -200,7 +238,7 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
         return (
           <iframe
             src={officeUrl}
-            className="w-full h-[74vh]"
+            className="w-full h-full"
             title={name}
             onLoad={() => setLoading(false)}
           />
@@ -208,8 +246,8 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
       }
       // Local file — cannot be sent to Office Online; offer direct download instead
       return (
-        <div className="p-8 text-center space-y-4">
-          <div className="text-5xl select-none">
+        <div className="h-full flex flex-col items-center justify-center p-8 text-center space-y-4">
+          <div className="text-5xl select-none animate-bounce">
             {type === 'EXCEL' ? '📊' : type === 'POWERPOINT' ? '📑' : '📄'}
           </div>
           <p className="font-semibold text-foreground">{name}</p>
@@ -221,7 +259,7 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
             href={directUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors shadow-lg"
           >
             <Download className="w-4 h-4" /> Open / Download
           </a>
@@ -231,7 +269,7 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
 
     // ── Fallback — unknown type ──
     return (
-      <div className="p-8 text-center text-muted-foreground text-sm space-y-3">
+      <div className="h-full flex flex-col items-center justify-center p-8 text-center text-muted-foreground text-sm space-y-3">
         <p>Preview not available for this file type.</p>
         <a
           href={directUrl}
@@ -248,36 +286,50 @@ export default function MaterialViewer({ material, open, onClose }: Props) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-5xl w-full p-0 overflow-hidden border-border bg-card rounded-2xl shadow-2xl">
-        {/* Header */}
-        <DialogHeader className="p-4 pb-3 border-b border-border bg-muted/20 flex flex-row items-center gap-3">
-          <DialogTitle className="flex-1 text-base font-bold truncate">{name}</DialogTitle>
-          {/* Type badge */}
-          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground bg-muted px-2.5 py-1 rounded-full border border-border">
-            {type}
-          </span>
-          {/* Direct open link */}
-          {directUrl && (
-            <a
-              href={directUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open in new tab"
-              className="shrink-0 flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
+        <div ref={containerRef} className="flex flex-col h-[80vh] bg-card">
+          {/* Header */}
+          <DialogHeader className="p-4 pb-3 border-b border-border bg-muted/20 flex flex-row items-center gap-3 shrink-0">
+            <DialogTitle className="flex-1 text-base font-bold truncate">{name}</DialogTitle>
+            {/* Type badge */}
+            <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground bg-muted px-2.5 py-1 rounded-full border border-border">
+              {type}
+            </span>
+            {/* Fullscreen toggle for videos */}
+            {type === 'VIDEO' && (
+              <button
+                onClick={toggleFullscreen}
+                title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-primary hover:bg-primary/10 transition-colors"
+              >
+                {isFullscreen
+                  ? <Minimize className="w-3.5 h-3.5" />
+                  : <Maximize className="w-3.5 h-3.5" />}
+              </button>
+            )}
+            {/* Direct open link */}
+            {directUrl && (
+              <a
+                href={directUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open in new tab"
+                className="shrink-0 flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </DialogHeader>
+
+          {/* Loading spinner — shown until the iframe/media fires onLoad */}
+          {loading && type !== 'TEXT' && (
+            <div className="absolute inset-0 flex items-center justify-center bg-card/80 z-10 pointer-events-none">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
           )}
-        </DialogHeader>
 
-        {/* Loading spinner — shown until the iframe/media fires onLoad */}
-        {loading && type !== 'TEXT' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-card/80 z-10 pointer-events-none">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <div className="flex-1 min-h-0 relative">
+            {renderContent()}
           </div>
-        )}
-
-        <div className="relative">
-          {renderContent()}
         </div>
       </DialogContent>
     </Dialog>

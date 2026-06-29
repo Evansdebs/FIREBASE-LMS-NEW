@@ -609,14 +609,15 @@ const createQuiz = async (req, res) => {
     const teacher = await prisma.teacher.findUnique({ where: { userId: req.user.id } });
     if (!teacher) return res.status(404).json({ error: 'Teacher not found.' });
 
-    const { courseId, classIds, title, duration, attemptLimit, questions, dueDate } = req.body;
+    const { courseId, classIds, title, duration, timeLimit, attemptLimit, questions, dueDate, instructions } = req.body;
     
     const fullQuiz = await prisma.$transaction(async (tx) => {
       const quiz = await tx.quiz.create({
         data: {
           courseId: parseInt(courseId),
           title,
-          duration: parseInt(duration) || 30,
+          duration: parseInt(timeLimit || duration) || 30,
+          instructions: instructions || null,
           attemptLimit: parseInt(attemptLimit) || 1,
           createdBy: teacher.id,
           dueDate: dueDate ? new Date(dueDate) : null,
@@ -704,17 +705,20 @@ const createQuiz = async (req, res) => {
 const updateQuiz = async (req, res) => {
   try {
     const quizId = parseInt(req.params.id);
-    const { title, duration, attemptLimit, isPublished, questions, classIds, dueDate } = req.body;
+    const { title, duration, timeLimit, attemptLimit, isPublished, questions, classIds, dueDate, instructions } = req.body;
 
     const fullQuiz = await prisma.$transaction(async (tx) => {
       // Fetch previous state to detect publish transition
       const prevQuiz = await tx.quiz.findUnique({ where: { id: quizId }, select: { isPublished: true, dueDate: true } });
 
+      const finalDuration = timeLimit !== undefined ? parseInt(timeLimit) : (duration !== undefined ? parseInt(duration) : undefined);
+
       await tx.quiz.update({
         where: { id: quizId },
         data: {
           title,
-          duration: duration ? parseInt(duration) : undefined,
+          duration: finalDuration,
+          instructions: instructions !== undefined ? (instructions || null) : undefined,
           attemptLimit: attemptLimit !== undefined ? parseInt(attemptLimit) : undefined,
           isPublished,
           dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : undefined,

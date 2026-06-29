@@ -1234,7 +1234,7 @@ const importQuizFromCSV = async (req, res) => {
 
 const createQuiz = async (req, res) => {
   try {
-    const { title, courseId, creatorId, timeLimit, attemptLimit, questions, classIds, dueDate } = req.body;
+    const { title, courseId, creatorId, timeLimit, attemptLimit, questions, classIds, dueDate, instructions } = req.body;
     
     let tid = creatorId;
     if (!tid) {
@@ -1270,6 +1270,7 @@ const createQuiz = async (req, res) => {
         data: { 
           title, 
           duration: parseInt(timeLimit) || 30,
+          instructions: instructions || null,
           attemptLimit: parseInt(attemptLimit) || 1,
           courseId: parseInt(courseId), 
           createdBy: parseInt(tid),
@@ -1355,7 +1356,7 @@ const updateQuiz = async (req, res) => {
   try {
     const { id } = req.params;
     const quizId = parseInt(id);
-    const { title, courseId, timeLimit, attemptLimit, isPublished, questions, classIds, dueDate } = req.body;
+    const { title, courseId, timeLimit, attemptLimit, isPublished, questions, classIds, dueDate, instructions } = req.body;
     
     const data = {};
     if (title) data.title = title;
@@ -1364,6 +1365,7 @@ const updateQuiz = async (req, res) => {
     if (attemptLimit !== undefined) data.attemptLimit = parseInt(attemptLimit);
     if (isPublished !== undefined) data.isPublished = isPublished;
     if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
+    if (instructions !== undefined) data.instructions = instructions || null;
     
     // If questions are provided, validate
     if (questions && questions.length > 0) {

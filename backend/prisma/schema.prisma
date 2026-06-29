@@ -221,6 +221,7 @@ model Quiz {
   courseId      Int
   title         String
   duration      Int            @default(30)
+  instructions  String?
   isPublished   Boolean        @default(false)
   attemptLimit  Int            @default(1)
   dueDate       DateTime?
