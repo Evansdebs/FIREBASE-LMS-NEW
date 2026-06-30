@@ -119,10 +119,11 @@ export default function TimetablePage() {
   const [editingEntry, setEditingEntry] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Form Fields
+  // Form Fields — use '__none__' sentinel for the "no teacher" Select option
+  // because Radix UI's Select crashes when given an empty-string value.
   const [formDay, setFormDay] = useState('MONDAY');
-  const [formSubjectId, setFormSubjectId] = useState('');
-  const [formTeacherId, setFormTeacherId] = useState('');
+  const [formSubjectId, setFormSubjectId] = useState('__empty__');
+  const [formTeacherId, setFormTeacherId] = useState('__none__');
   const [formStartTime, setFormStartTime] = useState('08:00');
   const [formEndTime, setFormEndTime] = useState('09:00');
   const [formRoom, setFormRoom] = useState('');
@@ -249,8 +250,8 @@ export default function TimetablePage() {
   const handleOpenAddDialog = () => {
     setEditingEntry(null);
     setFormDay('MONDAY');
-    setFormSubjectId(classSubjects[0]?.id?.toString() || '');
-    setFormTeacherId('');
+    setFormSubjectId(classSubjects[0]?.id?.toString() || '__empty__');
+    setFormTeacherId('__none__');
     setFormStartTime('08:00');
     setFormEndTime('09:00');
     setFormRoom('');
@@ -261,7 +262,7 @@ export default function TimetablePage() {
     setEditingEntry(entry);
     setFormDay(entry.dayOfWeek);
     setFormSubjectId(entry.subjectId.toString());
-    setFormTeacherId(entry.teacherId?.toString() || '');
+    setFormTeacherId(entry.teacherId?.toString() || '__none__');
     setFormStartTime(entry.startTime);
     setFormEndTime(entry.endTime);
     setFormRoom(entry.room || '');
@@ -270,17 +271,18 @@ export default function TimetablePage() {
 
   const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formSubjectId) {
+    if (!formSubjectId || formSubjectId === '__empty__') {
       toast.warning('Please select a subject.');
       return;
     }
 
     try {
       setSaving(true);
+      const effectiveTeacherId = formTeacherId && formTeacherId !== '__none__' ? formTeacherId : null;
       const payload = {
         classId: parseInt(selectedClassId),
         subjectId: parseInt(formSubjectId),
-        teacherId: formTeacherId ? parseInt(formTeacherId) : null,
+        teacherId: effectiveTeacherId ? parseInt(effectiveTeacherId) : null,
         dayOfWeek: formDay,
         startTime: formStartTime,
         endTime: formEndTime,
@@ -556,15 +558,16 @@ export default function TimetablePage() {
                     <SelectValue placeholder="Select subject" />
                   </SelectTrigger>
                   <SelectContent>
-                    {classSubjects.map(sub => (
-                      <SelectItem key={sub.id} value={sub.id.toString()}>
-                        {sub.name}
-                      </SelectItem>
-                    ))}
-                    {classSubjects.length === 0 && (
-                      <SelectItem value="none" disabled>
+                    {classSubjects.length === 0 ? (
+                      <SelectItem value="__empty__" disabled>
                         No subjects found for this class
                       </SelectItem>
+                    ) : (
+                      classSubjects.map(sub => (
+                        <SelectItem key={sub.id} value={sub.id.toString()}>
+                          {sub.name}
+                        </SelectItem>
+                      ))
                     )}
                   </SelectContent>
                 </Select>
@@ -578,7 +581,7 @@ export default function TimetablePage() {
                     <SelectValue placeholder="Select teacher (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Study Hall (No teacher)</SelectItem>
+                    <SelectItem value="__none__">Study Hall / No teacher</SelectItem>
                     {configData.teachers.map(t => (
                       <SelectItem key={t.id} value={t.id.toString()}>
                         {t.user.name}
