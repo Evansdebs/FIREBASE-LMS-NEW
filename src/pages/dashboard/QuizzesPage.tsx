@@ -478,6 +478,30 @@ export default function QuizzesPage() {
     }
   }, [activeAttempt, activeQuiz, submitting]);
 
+  const handleTerminateQuiz = useCallback(async () => {
+    if (!activeAttempt || !activeQuiz || submitting) return;
+    try {
+      setSubmitting(true);
+      const res = await api.post(`/api/student/quizzes/${activeQuiz.id}/terminate`, {
+        answers: activeAttempt.answers,
+        attemptId: activeAttempt.id
+      });
+      toast.error('EXAM TERMINATED: You switched tabs, left the screen, or exited fullscreen. The quiz was stopped. You have been granted exactly 1 retake attempt to restart.');
+      
+      setActiveAttempt((prev: any) => ({ ...prev, submitted: true, score: res.percentage }));
+      setShowResults(true);
+      fetchQuizzes();
+      
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [activeAttempt, activeQuiz, submitting]);
+
   // Lockdown Rules Engine
   useEffect(() => {
     if (!activeAttempt || activeAttempt.submitted || !activeQuiz) return;
@@ -487,42 +511,46 @@ export default function QuizzesPage() {
       toast.warning('This action is disabled during the exam.');
     };
 
-    let isStriking = false;
+    let isTerminating = false;
 
-    const handleVisibilityChange = async () => {
-      if (document.hidden && !isStriking) {
-        isStriking = true;
-        try {
-           const res = await api.post(`/api/student/quizzes/${activeQuiz.id}/strike`, {
-             attemptId: activeAttempt.id
-           });
-           
-           if (res.strikes >= 3) {
-             toast.error('EXAM TERMINATED: You have exceeded the maximum allowed tab switches (3).');
-             await handleSubmitQuiz();
-           } else {
-             toast.error(`WARNING: You left the exam screen. Strike ` + res.strikes + `/3. At 3 strikes your exam is auto-submitted.`);
-           }
-        } catch (e) {
-           console.error(e);
-        } finally {
-           isStriking = false;
-        }
+    const terminate = () => {
+      if (isTerminating) return;
+      isTerminating = true;
+      handleTerminateQuiz();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        terminate();
       }
+    };
+
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        terminate();
+      }
+    };
+
+    const handleBlur = () => {
+      terminate();
     };
 
     document.addEventListener('contextmenu', preventDefault);
     document.addEventListener('copy', preventDefault);
     document.addEventListener('paste', preventDefault);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    window.addEventListener('blur', handleBlur);
 
     return () => {
       document.removeEventListener('contextmenu', preventDefault);
       document.removeEventListener('copy', preventDefault);
       document.removeEventListener('paste', preventDefault);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      window.removeEventListener('blur', handleBlur);
     };
-  }, [activeAttempt, activeQuiz, handleSubmitQuiz]);
+  }, [activeAttempt, activeQuiz, handleTerminateQuiz]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -678,8 +706,14 @@ export default function QuizzesPage() {
         <div className="flex justify-between">
           <Button variant="outline" onClick={() => { 
              if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
-             setActiveQuiz(null); 
-             setActiveAttempt(null); 
+             if (!activeAttempt.submitted) {
+               if (confirm('Are you sure you want to abandon the quiz? It will be stopped, and you will only have exactly 1 attempt left to restart.')) {
+                 handleTerminateQuiz();
+               }
+             } else {
+               setActiveQuiz(null); 
+               setActiveAttempt(null); 
+             }
           }}>
             {activeAttempt.submitted ? 'Back to Quizzes' : 'Abandon Quiz'}
           </Button>

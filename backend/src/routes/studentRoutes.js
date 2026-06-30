@@ -29,6 +29,7 @@ router.post('/materials/:id/progress', studentController.updateMaterialProgress)
 router.get('/quizzes', cacheMiddleware, studentController.getAvailableQuizzes);
 router.get('/quizzes/:id/start', studentController.startQuiz);
 router.post('/quizzes/:id/submit', studentController.submitQuiz);
+router.post('/quizzes/:id/terminate', studentController.terminateQuiz);
 router.post('/quizzes/:id/strike', studentController.recordStrike);
 router.get('/quizzes/attempts/:attemptId', studentController.getAttemptReview);
 

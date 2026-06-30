@@ -462,6 +462,110 @@ const recordStrike = async (req, res) => {
   }
 };
 
+const terminateQuiz = async (req, res) => {
+  try {
+    const { answers, attemptId } = req.body;
+    if (!attemptId) return res.status(400).json({ error: 'Missing attemptId.' });
+
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
+    if (!student) return res.status(404).json({ error: 'Student not found.' });
+
+    const quiz = await prisma.quiz.findUnique({
+      where: { id: parseInt(req.params.id) },
+      include: { quizQuestions: { include: { options: true } } },
+    });
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found.' });
+
+    const attempt = await prisma.quizAttempt.findUnique({ where: { id: attemptId } });
+    if (!attempt || attempt.studentId !== student.id) {
+       return res.status(403).json({ error: 'Invalid attempt' });
+    }
+
+    // Auto-grade MCQ based on whatever answers were provided so far
+    let score = 0;
+    let total = 0;
+    const answersToCreate = [];
+
+    for (const q of quiz.quizQuestions) {
+      total += q.points;
+      const selectedOptionId = answers && answers[q.id] ? parseInt(answers[q.id]) : null;
+      const correctOption = q.options.find(o => o.isCorrect);
+      const isCorrect = selectedOptionId && correctOption && selectedOptionId === correctOption.id;
+      
+      answersToCreate.push({
+        questionId: q.id,
+        selectedOptionId: selectedOptionId,
+        isCorrect: !!isCorrect,
+      });
+      
+      if (isCorrect) score += q.points;
+    }
+
+    const percentage = total > 0 ? (score / total) * 100 : 0;
+
+    let grade = 'F';
+    if (percentage >= 90) grade = 'A';
+    else if (percentage >= 80) grade = 'B';
+    else if (percentage >= 70) grade = 'C';
+    else if (percentage >= 60) grade = 'D';
+
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      // 1. Create all quiz answers
+      for (const answer of answersToCreate) {
+        await tx.quizAnswer.create({
+          data: {
+            attemptId: attempt.id,
+            questionId: answer.questionId,
+            selectedOptionId: answer.selectedOptionId,
+            isCorrect: answer.isCorrect,
+          }
+        });
+      }
+
+      // 2. Update quiz attempt score & total
+      const updatedAttempt = await tx.quizAttempt.update({
+        where: { id: attempt.id },
+        data: { score, total }
+      });
+
+      // 3. Auto-grant EXACTLY 1 retake permission (if not already granted)
+      const existingGrant = await tx.quizRetakeGrant.findFirst({
+        where: {
+          quizId: quiz.id,
+          studentId: student.id
+        }
+      });
+
+      if (!existingGrant) {
+        await tx.quizRetakeGrant.create({
+          data: {
+            quizId: quiz.id,
+            studentId: student.id,
+            grantedBy: quiz.createdBy
+          }
+        });
+      }
+
+      // 4. Create audit log record
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'QUIZ_TERMINATE',
+          details: `Exam terminated (tab switch or exit) for quiz: ${quiz.title}. Retake granted automatically.`,
+          ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+        }
+      });
+
+      return updatedAttempt;
+    });
+
+    res.json({ attempt: transactionResult, percentage, grade, message: 'Quiz terminated. One retake attempt granted.' });
+  } catch (err) {
+    console.error('Terminate quiz error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
 const submitQuiz = async (req, res) => {
   try {
     const { answers, attemptId } = req.body; // { questionId: selectedOptionId }
@@ -870,7 +974,7 @@ const addPomodoroPoints = async (req, res) => {
 module.exports = {
   getDashboard, getMyCourses, getCourseDetails, getMyMaterials,
   updateMaterialProgress,
-  getAvailableQuizzes, startQuiz, submitQuiz, recordStrike, getAttemptReview,
+  getAvailableQuizzes, startQuiz, submitQuiz, terminateQuiz, recordStrike, getAttemptReview,
   getMyAssignments, submitAssignment,
   getMyResults, getMyAttendance, getMyAchievements,
   getMyLiveClasses, getAcademicReports,
