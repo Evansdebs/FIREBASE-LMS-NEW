@@ -315,14 +315,24 @@ const getAvailableQuizzes = async (req, res) => {
           orderBy: { submittedAt: 'desc' },
           select: { id: true, score: true, total: true, submittedAt: true } 
         },
+        retakeGrants: {
+          where: {
+            OR: [
+              { studentId: student.id },
+              { classId: student.classId ?? -1 },
+            ]
+          },
+          select: { id: true }
+        },
       },
     });
 
-    // Attach isExpired flag but keep quiz visible so student sees "Closed" state
+    // Attach isExpired and hasRetakeGrant flags
     const now = new Date();
     const enriched = quizzes.map(q => ({
       ...q,
       isExpired: q.dueDate ? new Date(q.dueDate) < now : false,
+      hasRetakeGrant: q.retakeGrants.length > 0,
     }));
 
     res.json(enriched);
@@ -330,6 +340,7 @@ const getAvailableQuizzes = async (req, res) => {
     res.status(500).json({ error: 'Server error.' });
   }
 };
+
 
 const getAttemptReview = async (req, res) => {
   try {
@@ -378,21 +389,41 @@ const startQuiz = async (req, res) => {
     if (!quiz) return res.status(404).json({ error: 'Quiz not found.' });
     if (!quiz.isPublished) return res.status(403).json({ error: 'Quiz is not published yet.' });
 
-    // Block if past due date
-    if (quiz.dueDate && new Date(quiz.dueDate) < new Date()) {
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
+    if (!student) return res.status(404).json({ error: 'Student not found.' });
+
+    // Check for a valid retake grant (student-specific or class-level)
+    const retakeGrant = await prisma.quizRetakeGrant.findFirst({
+      where: {
+        quizId: quiz.id,
+        OR: [
+          { studentId: student.id },
+          { classId: student.classId ?? -1 },
+        ]
+      }
+    });
+
+    const hasGrant = !!retakeGrant;
+
+    // Block if past due date — UNLESS the student has a retake grant
+    if (!hasGrant && quiz.dueDate && new Date(quiz.dueDate) < new Date()) {
       return res.status(403).json({ error: 'This quiz has closed. The due date has passed.' });
     }
 
-    // Check attempt limit
-    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
+    // Check attempt limit — UNLESS the student has a retake grant
     const attemptCount = await prisma.quizAttempt.count({
       where: { studentId: student.id, quizId: quiz.id }
     });
-    if (attemptCount >= quiz.attemptLimit) {
+    if (!hasGrant && attemptCount >= quiz.attemptLimit) {
       return res.status(400).json({ error: `You have reached the maximum number of attempts (${quiz.attemptLimit}).` });
     }
 
-    // Create active attempt to track strikes securely
+    // Consume the grant (delete it so it can only be used once)
+    if (hasGrant) {
+      await prisma.quizRetakeGrant.delete({ where: { id: retakeGrant.id } });
+    }
+
+    // Create active attempt
     const attempt = await prisma.quizAttempt.create({
       data: { studentId: student.id, quizId: quiz.id, score: 0, strikes: 0 }
     });
@@ -401,7 +432,7 @@ const startQuiz = async (req, res) => {
       data: {
         userId: req.user.id,
         action: 'QUIZ_START',
-        details: `Started quiz: ${quiz.title} (Attempt #${attemptCount + 1})`,
+        details: `Started quiz: ${quiz.title} (Attempt #${attemptCount + 1}${hasGrant ? ' — Retake Grant' : ''})`,
         ipAddress: req.ip || req.headers['x-forwarded-for'] || null
       }
     });
@@ -411,6 +442,7 @@ const startQuiz = async (req, res) => {
     res.status(500).json({ error: 'Server error.' });
   }
 };
+
 
 const recordStrike = async (req, res) => {
   try {

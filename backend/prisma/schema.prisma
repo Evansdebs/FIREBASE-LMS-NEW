@@ -230,6 +230,7 @@ model Quiz {
   quizAttempts  QuizAttempt[]
   quizQuestions QuizQuestion[]
   quizClasses   QuizClass[]
+  retakeGrants  QuizRetakeGrant[]
   creator       Teacher        @relation(fields: [createdBy], references: [id], onDelete: Cascade)
   course        Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
@@ -286,6 +287,18 @@ model QuizAnswer {
   attempt          QuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
   @@map("quiz_answers")
+}
+
+model QuizRetakeGrant {
+  id        Int      @id @default(autoincrement())
+  quizId    Int
+  studentId Int?     // target a specific student (Student.id)
+  classId   Int?     // target an entire class (Class.id)
+  grantedBy Int      // Teacher.id who issued the grant
+  createdAt DateTime @default(now())
+  quiz      Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_retake_grants")
 }
 
 model Assignment {

@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import {
   Plus, Search, Clock, CheckCircle, XCircle, PlayCircle, Trophy,
-  AlertTriangle, Trash2, Edit, Loader2, Download, Upload, FileSpreadsheet, FileText, Calendar, Timer, ClipboardList
+  AlertTriangle, Trash2, Edit, Loader2, Download, Upload, FileSpreadsheet, FileText, Calendar, Timer, ClipboardList, RefreshCw, UserCheck, Users, X
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -147,6 +147,75 @@ export default function QuizzesPage() {
   const [showResults, setShowResults] = useState(false);
   const [instructionsQuiz, setInstructionsQuiz] = useState<any | null>(null);
   const [agreedToInstructions, setAgreedToInstructions] = useState(false);
+  const [grantRetakeQuiz, setGrantRetakeQuiz] = useState<any | null>(null);
+  const [existingGrants, setExistingGrants] = useState<any[]>([]);
+  const [grantTarget, setGrantTarget] = useState<'student' | 'class'>('student');
+  const [grantStudentId, setGrantStudentId] = useState('');
+  const [grantClassId, setGrantClassId] = useState('');
+  const [grantStudents, setGrantStudents] = useState<any[]>([]);
+  const [grantClasses, setGrantClasses] = useState<any[]>([]);
+  const [grantLoading, setGrantLoading] = useState(false);
+
+  const openGrantRetake = async (quiz: any) => {
+    try {
+      setGrantRetakeQuiz(quiz);
+      setGrantStudentId('');
+      setGrantClassId('');
+      
+      // Fetch existing grants
+      const grantsRes = await api.get(`/api/teacher/quizzes/${quiz.id}/grants`);
+      setExistingGrants(grantsRes);
+
+      // Fetch course classes & students
+      const courseRes = await api.get(`/api/teacher/courses/${quiz.courseId}`);
+      const classes = courseRes.courseClasses?.map((cc: any) => cc.class) || [];
+      const students = classes.flatMap((c: any) => c.students || []);
+      const uniqueStudents = Array.from(new Map(students.map((s: any) => [s.id, s])).values());
+      
+      setGrantClasses(classes);
+      setGrantStudents(uniqueStudents);
+    } catch (err: any) {
+      toast.error('Failed to load grant details');
+    }
+  };
+
+  const submitGrant = async () => {
+    if (!grantRetakeQuiz) return;
+    try {
+      setGrantLoading(true);
+      const payload = grantTarget === 'student' 
+        ? { studentId: parseInt(grantStudentId) } 
+        : { classId: parseInt(grantClassId) };
+        
+      await api.post(`/api/teacher/quizzes/${grantRetakeQuiz.id}/grants`, payload);
+      toast.success('Retake permission granted successfully!');
+      
+      // Refresh grants list
+      const grantsRes = await api.get(`/api/teacher/quizzes/${grantRetakeQuiz.id}/grants`);
+      setExistingGrants(grantsRes);
+      
+      setGrantStudentId('');
+      setGrantClassId('');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to grant retake');
+    } finally {
+      setGrantLoading(false);
+    }
+  };
+
+  const revokeGrant = async (quizId: number, grantId: number) => {
+    if (!confirm('Revoke this retake permission?')) return;
+    try {
+      await api.delete(`/api/teacher/quizzes/${quizId}/grants/${grantId}`);
+      toast.success('Retake permission revoked.');
+      
+      // Refresh grants list
+      const grantsRes = await api.get(`/api/teacher/quizzes/${quizId}/grants`);
+      setExistingGrants(grantsRes);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to revoke retake');
+    }
+  };
 
   // Listen for custom import event from form
   useEffect(() => {
@@ -719,8 +788,10 @@ export default function QuizzesPage() {
                         startQuiz(quiz);
                       }
                     }}
-                      disabled={quiz.isExpired || quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)}>
-                      {quiz.isExpired
+                      disabled={(quiz.isExpired || quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)) && !quiz.hasRetakeGrant}>
+                      {quiz.hasRetakeGrant
+                        ? <><RefreshCw className="w-3.5 h-3.5" /> Retake Quiz</>
+                        : quiz.isExpired
                         ? <><Timer className="w-3.5 h-3.5" /> Closed</>
                         : quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)
                         ? <><CheckCircle className="w-3.5 h-3.5" /> Completed</>
@@ -738,6 +809,11 @@ export default function QuizzesPage() {
                     </Button>
                     <Button size="sm" variant="outline" className="gap-1 font-semibold hover:bg-muted/50" onClick={() => handleEditClick(quiz)} disabled={loadingQuiz}>
                       {loadingQuiz ? <Loader2 className="w-3 h-3 animate-spin" /> : <Edit className="w-3 h-3" />} Edit
+                    </Button>
+                    <Button size="sm" variant="outline"
+                      className="gap-1 font-semibold text-amber-600 border-amber-400/30 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-700"
+                      onClick={() => openGrantRetake(quiz)}>
+                      <RefreshCw className="w-3 h-3" /> Grant Retake
                     </Button>
                     <Button size="sm" variant="ghost" className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/20 font-semibold" onClick={() => deleteQuiz(quiz.id)}>
                       <Trash2 className="w-3 h-3" /> Delete
@@ -801,6 +877,116 @@ export default function QuizzesPage() {
               className="flex-1 font-bold gap-1"
             >
               <PlayCircle className="w-4 h-4" /> Start Attempt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Teacher — Grant Retake Dialog */}
+      <Dialog open={!!grantRetakeQuiz} onOpenChange={(open) => { if (!open) { setGrantRetakeQuiz(null); setGrantStudentId(''); setGrantClassId(''); }}}>
+        <DialogContent className="max-w-lg border-border bg-card rounded-2xl shadow-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg font-bold flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-amber-500" />
+              Grant Retake — {grantRetakeQuiz?.title}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="my-4 space-y-5">
+            {/* Target type toggle */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setGrantTarget('student'); setGrantClassId(''); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold border transition-all ${
+                  grantTarget === 'student'
+                    ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                    : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted/60'
+                }`}
+              >
+                <UserCheck className="w-4 h-4" /> Individual Student
+              </button>
+              <button
+                onClick={() => { setGrantTarget('class'); setGrantStudentId(''); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold border transition-all ${
+                  grantTarget === 'class'
+                    ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                    : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted/60'
+                }`}
+              >
+                <Users className="w-4 h-4" /> Entire Class
+              </button>
+            </div>
+
+            {/* Student picker */}
+            {grantTarget === 'student' && (
+              <div className="space-y-2">
+                <Label>Select Student</Label>
+                <Select value={grantStudentId} onValueChange={setGrantStudentId}>
+                  <SelectTrigger><SelectValue placeholder="Select student..." /></SelectTrigger>
+                  <SelectContent>
+                    {grantStudents.map((s: any) => (
+                      <SelectItem key={s.id} value={s.id.toString()}>{s.user?.name} — {s.user?.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Class picker */}
+            {grantTarget === 'class' && (
+              <div className="space-y-2">
+                <Label>Select Class</Label>
+                <Select value={grantClassId} onValueChange={setGrantClassId}>
+                  <SelectTrigger><SelectValue placeholder="Select class..." /></SelectTrigger>
+                  <SelectContent>
+                    {grantClasses.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Active grants list */}
+            {existingGrants.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider">Active Grants</Label>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                  {existingGrants.map((g: any) => (
+                    <div key={g.id} className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40">
+                      <div className="flex items-center gap-2">
+                        {g.targetType === 'student'
+                          ? <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                          : <Users className="w-3.5 h-3.5 text-amber-600" />}
+                        <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">{g.targetName}</span>
+                      </div>
+                      <button
+                        onClick={() => revokeGrant(grantRetakeQuiz.id, g.id)}
+                        className="text-destructive hover:bg-destructive/10 rounded-full p-0.5 transition-colors"
+                        title="Revoke grant"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {existingGrants.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-1">No active retake grants for this quiz.</p>
+            )}
+          </div>
+
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={() => setGrantRetakeQuiz(null)} className="flex-1 font-bold">Cancel</Button>
+            <Button
+              disabled={grantLoading || (grantTarget === 'student' ? !grantStudentId : !grantClassId)}
+              onClick={submitGrant}
+              className="flex-1 font-bold gap-1 bg-amber-500 hover:bg-amber-600 text-white border-amber-500"
+            >
+              {grantLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Grant Retake
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -51,6 +51,11 @@ router.get('/quizzes/:id/export/word', teacherController.exportQuizToWord);
 router.get('/quizzes/:id/export/csv', teacherController.exportQuizToCSV);
 router.post('/quizzes/:id/import/csv', upload.single('file'), teacherController.importQuizFromCSV);
 
+// Quiz Retake Grants
+router.get('/quizzes/:id/grants', teacherController.getRetakeGrants);
+router.post('/quizzes/:id/grants', teacherController.grantRetake);
+router.delete('/quizzes/:id/grants/:grantId', teacherController.revokeRetake);
+
 // Assignments
 router.get('/assignments', cacheMiddleware, teacherController.getMyAssignments);
 router.post('/assignments', upload.single('file'), teacherController.createAssignment);

@@ -820,6 +820,133 @@ const deleteQuiz = async (req, res) => {
   }
 };
 
+// ─── QUIZ RETAKE GRANTS ───────────────────────────────────
+const grantRetake = async (req, res) => {
+  try {
+    const quizId = parseInt(req.params.id);
+    const { studentId, classId } = req.body;
+
+    if (!studentId && !classId) {
+      return res.status(400).json({ error: 'Provide either studentId or classId.' });
+    }
+
+    const teacher = await prisma.teacher.findUnique({ where: { userId: req.user.id } });
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found.' });
+
+    const quiz = await prisma.quiz.findUnique({
+      where: { id: quizId },
+      include: { course: { include: { subject: true } } }
+    });
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found.' });
+
+    // Create the grant
+    const grant = await prisma.quizRetakeGrant.create({
+      data: {
+        quizId,
+        studentId: studentId ? parseInt(studentId) : null,
+        classId: classId ? parseInt(classId) : null,
+        grantedBy: teacher.id,
+      }
+    });
+
+    // Send notification to the affected student(s)
+    const subjectName = quiz.course?.subject?.name || 'a subject';
+    if (studentId) {
+      const student = await prisma.student.findUnique({
+        where: { id: parseInt(studentId) },
+        select: { userId: true }
+      });
+      if (student) {
+        await prisma.notification.create({
+          data: {
+            userId: student.userId,
+            title: '🔁 Quiz Retake Granted',
+            message: `Your teacher has granted you a retake for the quiz "${quiz.title}" in ${subjectName}. You may now attempt it again.`,
+            type: 'ACADEMIC',
+            isGlobal: false
+          }
+        });
+      }
+    } else if (classId) {
+      const students = await prisma.student.findMany({
+        where: { classId: parseInt(classId) },
+        select: { userId: true }
+      });
+      if (students.length > 0) {
+        await prisma.notification.createMany({
+          data: students.map(s => ({
+            userId: s.userId,
+            title: '🔁 Quiz Retake Granted',
+            message: `Your teacher has granted your class a retake for the quiz "${quiz.title}" in ${subjectName}. You may now attempt it again.`,
+            type: 'ACADEMIC',
+            isGlobal: false
+          }))
+        });
+      }
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'QUIZ_RETAKE_GRANT',
+        details: `Granted retake for quiz ID ${quizId} to ${studentId ? `student ID ${studentId}` : `class ID ${classId}`}`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null
+      }
+    });
+
+    res.status(201).json(grant);
+  } catch (err) {
+    console.error('Grant retake error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+const revokeRetake = async (req, res) => {
+  try {
+    const grantId = parseInt(req.params.grantId);
+    await prisma.quizRetakeGrant.delete({ where: { id: grantId } });
+    res.json({ message: 'Retake grant revoked.' });
+  } catch (err) {
+    console.error('Revoke retake error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+const getRetakeGrants = async (req, res) => {
+  try {
+    const quizId = parseInt(req.params.id);
+    const grants = await prisma.quizRetakeGrant.findMany({
+      where: { quizId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Enrich with student/class names
+    const enriched = await Promise.all(grants.map(async (g) => {
+      let targetName = 'Unknown';
+      let targetType = 'unknown';
+      if (g.studentId) {
+        const student = await prisma.student.findUnique({
+          where: { id: g.studentId },
+          include: { user: { select: { name: true, email: true } } }
+        });
+        targetName = student ? `${student.user.name} (${student.user.email})` : `Student #${g.studentId}`;
+        targetType = 'student';
+      } else if (g.classId) {
+        const cls = await prisma.class.findUnique({ where: { id: g.classId } });
+        targetName = cls ? cls.name : `Class #${g.classId}`;
+        targetType = 'class';
+      }
+      return { ...g, targetName, targetType };
+    }));
+
+    res.json(enriched);
+  } catch (err) {
+    console.error('Get retake grants error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+
 const getQuizById = async (req, res) => {
   try {
     const quiz = await prisma.quiz.findUnique({
@@ -1824,6 +1951,7 @@ module.exports = {
   createTopic, updateTopic, deleteTopic,
   getMyMaterials, uploadMaterial, updateMaterial, deleteMaterial,
   createQuiz, updateQuiz, deleteQuiz, getQuizById, getQuizResults,
+  grantRetake, revokeRetake, getRetakeGrants,
   createAssignment, updateAssignment, getAssignmentSubmissions, gradeSubmission, deleteAssignment, exportAssignmentGrades,
   markAttendance, getAttendance,
   createLiveClass, getMyLiveClasses, updateLiveClass, deleteLiveClass,
