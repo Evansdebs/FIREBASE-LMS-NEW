@@ -971,6 +971,32 @@ const addPomodoroPoints = async (req, res) => {
   }
 };
 
+const getTimetable = async (req, res) => {
+  try {
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
+    if (!student || !student.classId) {
+      return res.json([]);
+    }
+
+    const entries = await prisma.timetableEntry.findMany({
+      where: { classId: student.classId },
+      include: {
+        subject: { select: { id: true, name: true } },
+        teacher: { include: { user: { select: { name: true } } } },
+        class: true,
+      },
+      orderBy: [
+        { startTime: 'asc' },
+      ],
+    });
+
+    res.json(entries);
+  } catch (err) {
+    console.error('Student get timetable error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
 module.exports = {
   getDashboard, getMyCourses, getCourseDetails, getMyMaterials,
   updateMaterialProgress,
@@ -979,4 +1005,5 @@ module.exports = {
   getMyResults, getMyAttendance, getMyAchievements,
   getMyLiveClasses, getAcademicReports,
   addPomodoroPoints,
+  getTimetable,
 };

@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, BookOpen, Settings, LogOut, GraduationCap,
   Shield, ClipboardList, MessageSquare, BarChart3, Calendar, FileText,
   HelpCircle, FolderOpen, Megaphone, Trophy, ChevronDown, ChevronRight,
-  StickyNote, ShoppingBag, FlaskConical, Sparkles, Video
+  StickyNote, ShoppingBag, FlaskConical, Sparkles, Video, Grid
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -49,6 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
       { icon: HelpCircle, label: 'Quizzes', path: '/dashboard/quizzes', roles: ['super_admin', 'teacher', 'student'], permission: 'approve_content' },
       { icon: BarChart3, label: 'Gradebook', path: '/dashboard/gradebook', roles: ['super_admin', 'teacher'], permission: 'view_all_grades' },
       { icon: Calendar, label: 'Interactive Calendar', path: '/dashboard/calendar', roles: ['super_admin', 'teacher', 'student'] },
+      { icon: Grid, label: 'Weekly Timetable', path: '/dashboard/timetable', roles: ['super_admin', 'teacher', 'student'] },
       { icon: Video, label: 'Live Classes', path: '/dashboard/live-classes', roles: ['super_admin', 'teacher', 'student'] },
       { icon: FlaskConical, label: 'Virtual Study Room', path: '/dashboard/study-room', roles: ['super_admin', 'teacher', 'student'] },
       { icon: Sparkles, label: 'AI Tutor', path: '/dashboard/ai-tutor', roles: ['super_admin', 'teacher', 'student'] },

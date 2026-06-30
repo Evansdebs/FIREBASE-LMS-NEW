@@ -56,6 +56,13 @@ router.get('/quizzes/:id/grants', teacherController.getRetakeGrants);
 router.post('/quizzes/:id/grants', teacherController.grantRetake);
 router.delete('/quizzes/:id/grants/:grantId', teacherController.revokeRetake);
 
+// Timetable System
+router.get('/timetable', teacherController.getTimetable);
+router.get('/timetable/config', teacherController.getTimetableConfig);
+router.post('/timetable', teacherController.createTimetableEntry);
+router.put('/timetable/:id', teacherController.updateTimetableEntry);
+router.delete('/timetable/:id', teacherController.deleteTimetableEntry);
+
 // Assignments
 router.get('/assignments', cacheMiddleware, teacherController.getMyAssignments);
 router.post('/assignments', upload.single('file'), teacherController.createAssignment);

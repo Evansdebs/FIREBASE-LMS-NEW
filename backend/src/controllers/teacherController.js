@@ -1943,7 +1943,206 @@ const importQuizFromCSV = async (req, res) => {
   }
 };
 
+// ─── WEEKLY TIMETABLE ──────────────────────────────────
+const checkTimetableConflict = async (classId, teacherId, dayOfWeek, startTime, endTime, excludeId = null) => {
+  const toMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+  };
 
+  const start = toMinutes(startTime);
+  const end = toMinutes(endTime);
+
+  if (start >= end) {
+    return 'Start time must be before end time.';
+  }
+
+  const entries = await prisma.timetableEntry.findMany({
+    where: {
+      dayOfWeek,
+      id: excludeId ? { not: excludeId } : undefined,
+    },
+    include: {
+      class: true,
+      subject: true,
+      teacher: { include: { user: true } },
+    },
+  });
+
+  for (const entry of entries) {
+    const entryStart = toMinutes(entry.startTime);
+    const entryEnd = toMinutes(entry.endTime);
+    const overlaps = start < entryEnd && entryStart < end;
+
+    if (overlaps) {
+      if (entry.classId === parseInt(classId)) {
+        return `Class already has "${entry.subject.name}" scheduled at this time (${entry.startTime} - ${entry.endTime}).`;
+      }
+      if (teacherId && entry.teacherId === parseInt(teacherId)) {
+        return `Teacher is already teaching "${entry.subject.name}" to Class "${entry.class.name}" at this time (${entry.startTime} - ${entry.endTime}).`;
+      }
+    }
+  }
+  return null;
+};
+
+const getTimetable = async (req, res) => {
+  try {
+    const classId = parseInt(req.query.classId);
+    if (!classId) return res.status(400).json({ error: 'Missing classId.' });
+
+    const entries = await prisma.timetableEntry.findMany({
+      where: { classId },
+      include: {
+        subject: { select: { id: true, name: true } },
+        teacher: { include: { user: { select: { name: true } } } },
+        class: true,
+      },
+      orderBy: [
+        { startTime: 'asc' },
+      ],
+    });
+
+    res.json(entries);
+  } catch (err) {
+    console.error('Get timetable error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+const getTimetableConfig = async (req, res) => {
+  try {
+    const [classes, teachers] = await Promise.all([
+      prisma.class.findMany({
+        include: { subjects: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.teacher.findMany({
+        include: { user: { select: { name: true } } },
+      }),
+    ]);
+    res.json({ classes, teachers });
+  } catch (err) {
+    console.error('Get timetable config error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+const createTimetableEntry = async (req, res) => {
+  try {
+    const { classId, subjectId, teacherId, dayOfWeek, startTime, endTime, room } = req.body;
+    if (!classId || !subjectId || !dayOfWeek || !startTime || !endTime) {
+      return res.status(400).json({ error: 'Missing required fields.' });
+    }
+
+    const conflict = await checkTimetableConflict(classId, teacherId, dayOfWeek, startTime, endTime);
+    if (conflict) {
+      return res.status(400).json({ error: conflict });
+    }
+
+    const entry = await prisma.timetableEntry.create({
+      data: {
+        classId: parseInt(classId),
+        subjectId: parseInt(subjectId),
+        teacherId: teacherId ? parseInt(teacherId) : null,
+        dayOfWeek,
+        startTime,
+        endTime,
+        room: room || null,
+      },
+      include: {
+        subject: { select: { id: true, name: true } },
+        teacher: { include: { user: { select: { name: true } } } },
+        class: true,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'TIMETABLE_CREATE',
+        details: `Added timetable slot for class ID ${classId}: Subject ID ${subjectId} on ${dayOfWeek} (${startTime}-${endTime})`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+      },
+    });
+
+    res.status(201).json(entry);
+  } catch (err) {
+    console.error('Create timetable entry error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+const updateTimetableEntry = async (req, res) => {
+  try {
+    const entryId = parseInt(req.params.id);
+    const { classId, subjectId, teacherId, dayOfWeek, startTime, endTime, room } = req.body;
+    if (!classId || !subjectId || !dayOfWeek || !startTime || !endTime) {
+      return res.status(400).json({ error: 'Missing required fields.' });
+    }
+
+    const conflict = await checkTimetableConflict(classId, teacherId, dayOfWeek, startTime, endTime, entryId);
+    if (conflict) {
+      return res.status(400).json({ error: conflict });
+    }
+
+    const entry = await prisma.timetableEntry.update({
+      where: { id: entryId },
+      data: {
+        classId: parseInt(classId),
+        subjectId: parseInt(subjectId),
+        teacherId: teacherId ? parseInt(teacherId) : null,
+        dayOfWeek,
+        startTime,
+        endTime,
+        room: room || null,
+      },
+      include: {
+        subject: { select: { id: true, name: true } },
+        teacher: { include: { user: { select: { name: true } } } },
+        class: true,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'TIMETABLE_UPDATE',
+        details: `Updated timetable slot ID ${entryId} for class ID ${classId}: ${dayOfWeek} (${startTime}-${endTime})`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+      },
+    });
+
+    res.json(entry);
+  } catch (err) {
+    console.error('Update timetable entry error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+const deleteTimetableEntry = async (req, res) => {
+  try {
+    const entryId = parseInt(req.params.id);
+    const entry = await prisma.timetableEntry.delete({
+      where: { id: entryId },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'TIMETABLE_DELETE',
+        details: `Deleted timetable slot ID ${entryId} for class ID ${entry.classId}`,
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+      },
+    });
+
+    res.json({ message: 'Timetable entry deleted successfully.' });
+  } catch (err) {
+    console.error('Delete timetable entry error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
 
 module.exports = {
   getDashboard, getRiskReport,
@@ -1961,4 +2160,9 @@ module.exports = {
   exportQuizToWord,
   exportQuizToCSV,
   importQuizFromCSV,
+  getTimetable,
+  getTimetableConfig,
+  createTimetableEntry,
+  updateTimetableEntry,
+  deleteTimetableEntry,
 };

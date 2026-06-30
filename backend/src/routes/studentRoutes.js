@@ -53,4 +53,7 @@ router.get('/academic-reports', studentController.getAcademicReports);
 // Live Classes
 router.get('/live-classes', studentController.getMyLiveClasses);
 
+// Timetable
+router.get('/timetable', studentController.getTimetable);
+
 module.exports = router;
