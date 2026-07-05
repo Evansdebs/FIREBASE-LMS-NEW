@@ -1053,7 +1053,7 @@ const getQuizLeaderboard = async (req, res) => {
     });
 
     const leaderboard = Object.values(bestAttemptsMap)
-      .map((att: any) => ({
+      .map((att) => ({
         studentId: att.student.id,
         name: att.student.user.name,
         avatar: att.student.user.avatar,
