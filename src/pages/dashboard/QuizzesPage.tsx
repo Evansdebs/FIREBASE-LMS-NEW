@@ -161,7 +161,7 @@ export default function QuizzesPage() {
       setGrantRetakeQuiz(quiz);
       setGrantStudentId('');
       setGrantClassId('');
-      
+
       // Fetch existing grants
       const grantsRes = await api.get(`/api/teacher/quizzes/${quiz.id}/grants`);
       setExistingGrants(grantsRes);
@@ -171,7 +171,7 @@ export default function QuizzesPage() {
       const classes = courseRes.courseClasses?.map((cc: any) => cc.class) || [];
       const students = classes.flatMap((c: any) => c.students || []);
       const uniqueStudents = Array.from(new Map(students.map((s: any) => [s.id, s])).values());
-      
+
       setGrantClasses(classes);
       setGrantStudents(uniqueStudents);
     } catch (err: any) {
@@ -183,17 +183,17 @@ export default function QuizzesPage() {
     if (!grantRetakeQuiz) return;
     try {
       setGrantLoading(true);
-      const payload = grantTarget === 'student' 
-        ? { studentId: parseInt(grantStudentId) } 
+      const payload = grantTarget === 'student'
+        ? { studentId: parseInt(grantStudentId) }
         : { classId: parseInt(grantClassId) };
-        
+
       await api.post(`/api/teacher/quizzes/${grantRetakeQuiz.id}/grants`, payload);
       toast.success('Retake permission granted successfully!');
-      
+
       // Refresh grants list
       const grantsRes = await api.get(`/api/teacher/quizzes/${grantRetakeQuiz.id}/grants`);
       setExistingGrants(grantsRes);
-      
+
       setGrantStudentId('');
       setGrantClassId('');
     } catch (err: any) {
@@ -208,7 +208,7 @@ export default function QuizzesPage() {
     try {
       await api.delete(`/api/teacher/quizzes/${quizId}/grants/${grantId}`);
       toast.success('Retake permission revoked.');
-      
+
       // Refresh grants list
       const grantsRes = await api.get(`/api/teacher/quizzes/${quizId}/grants`);
       setExistingGrants(grantsRes);
@@ -240,7 +240,7 @@ export default function QuizzesPage() {
   const fetchLeaderboard = async (quizId: number) => {
     try {
       setLoadingLeaderboard(true);
-      const endpoint = isStudent 
+      const endpoint = isStudent
         ? `/api/student/quizzes/${quizId}/leaderboard`
         : `/api/teacher/quizzes/${quizId}/leaderboard`;
       const res = await api.get(endpoint);
@@ -291,8 +291,8 @@ export default function QuizzesPage() {
     try {
       setLoading(true);
       let endpoint = isStudent ? '/api/student/quizzes' :
-                     isTeacher ? '/api/teacher/quizzes' :
-                     '/api/admin/quizzes';
+        isTeacher ? '/api/teacher/quizzes' :
+          '/api/admin/quizzes';
       const res = await api.get(endpoint);
       setQuizzes(Array.isArray(res) ? res : res.quizzes || []);
     } catch (err: any) {
@@ -311,13 +311,13 @@ export default function QuizzesPage() {
       const doc = new jsPDF();
       doc.setFontSize(22);
       doc.text(res.title || 'Quiz', 14, 20);
-      
+
       doc.setFontSize(14);
       doc.text(`Subject: ${res.course?.subject?.name || 'N/A'}`, 14, 30);
       let yPos = 38;
       if (res.class?.name) {
-         doc.text(`Class: ${res.class?.name}`, 14, yPos);
-         yPos += 8;
+        doc.text(`Class: ${res.class?.name}`, 14, yPos);
+        yPos += 8;
       }
 
       doc.setFontSize(12);
@@ -342,12 +342,12 @@ export default function QuizzesPage() {
           const optText = `    ${opt.optionLabel}. ${opt.optionText} ${opt.isCorrect ? '(Correct Answer)' : ''}`;
           if (opt.isCorrect) doc.setFont(undefined, 'bolditalic');
           else doc.setFont(undefined, 'normal');
-          
+
           const optLines = doc.splitTextToSize(optText, 170);
           doc.text(optLines, 14, yPos);
           yPos += (optLines.length * 6);
         });
-        
+
         yPos += 6;
       });
 
@@ -360,10 +360,10 @@ export default function QuizzesPage() {
 
   const exportQuizToCSV = async (quizId: number) => {
     try {
-      const endpoint = isAdmin 
+      const endpoint = isAdmin
         ? `/api/admin/quizzes/${quizId}/export/csv`
         : `/api/teacher/quizzes/${quizId}/export/csv`;
-      
+
       const blob = await api.get(endpoint, { responseType: 'blob' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -384,7 +384,7 @@ export default function QuizzesPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const endpoint = isAdmin 
+      const endpoint = isAdmin
         ? `/api/admin/quizzes/${quizId}/import/csv`
         : `/api/teacher/quizzes/${quizId}/import/csv`;
 
@@ -432,7 +432,7 @@ export default function QuizzesPage() {
       });
       setTimeLeft(quizData.duration * 60);
       setShowResults(false);
-      
+
       // Request Fullscreen
       document.documentElement.requestFullscreen().catch(() => {
         toast.error('Could not auto-enable fullscreen mode.');
@@ -446,7 +446,7 @@ export default function QuizzesPage() {
     try {
       setLoadingQuiz(true);
       const res = await api.get(`/api/student/quizzes/attempts/${attemptId}`);
-      
+
       const answersMap: Record<number, number> = {};
       (res.answers || []).forEach((ans: any) => {
         if (ans.selectedOptionId) {
@@ -508,12 +508,12 @@ export default function QuizzesPage() {
         answers: activeAttempt.answers,
         attemptId: activeAttempt.id
       });
-      
+
       toast.success('Quiz submitted successfully!');
       fetchQuizzes();
-      
+
       if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
+        document.exitFullscreen().catch(() => { });
       }
 
       await reviewQuiz(activeAttempt.id);
@@ -532,11 +532,11 @@ export default function QuizzesPage() {
         answers: activeAttempt.answers,
         attemptId: activeAttempt.id
       });
-      toast.error('EXAM TERMINATED: You switched tabs, left the screen, or exited fullscreen. The quiz was stopped. You have been granted exactly 1 retake attempt to restart.');
+      toast.error('Oops! Evans Got You. You have been granted exactly 1 retake attempt to restart.');
       fetchQuizzes();
-      
+
       if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
+        document.exitFullscreen().catch(() => { });
       }
 
       await reviewQuiz(activeAttempt.id);
@@ -626,7 +626,7 @@ export default function QuizzesPage() {
               <div className={cn(
                 'flex items-center gap-2 px-4 py-2 rounded-lg font-heading font-bold text-lg',
                 timeLeft <= 60 ? 'bg-destructive/10 text-destructive animate-pulse' :
-                timeLeft <= 300 ? 'bg-warning/10 text-warning' : 'bg-primary/10 text-primary'
+                  timeLeft <= 300 ? 'bg-warning/10 text-warning' : 'bg-primary/10 text-primary'
               )}>
                 <Clock className="w-5 h-5" />
                 {formatTime(timeLeft)}
@@ -681,8 +681,8 @@ export default function QuizzesPage() {
                 key={question.id}
                 className={cn('border-border transition-all',
                   showResults && selectedOptionId === correctOption?.id ? 'ring-1 ring-success/30' :
-                  showResults && selectedOptionId ? 'ring-1 ring-destructive/30' :
-                  isUnansweredHighlight ? 'ring-2 ring-warning/60 bg-warning/5' : ''
+                    showResults && selectedOptionId ? 'ring-1 ring-destructive/30' :
+                      isUnansweredHighlight ? 'ring-2 ring-warning/60 bg-warning/5' : ''
                 )}>
                 <CardContent className="p-5">
                   <div className="flex items-start gap-3">
@@ -705,17 +705,17 @@ export default function QuizzesPage() {
                                   isCorrect
                                     ? 'border-success bg-success/10 text-success font-medium'
                                     : isSelected && !isCorrect
-                                    ? 'border-destructive bg-destructive/10 text-destructive'
-                                    : 'border-border bg-muted/5 text-muted-foreground/50'
+                                      ? 'border-destructive bg-destructive/10 text-destructive'
+                                      : 'border-border bg-muted/5 text-muted-foreground/50'
                                 )}
                               >
                                 <span className={cn(
                                   'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0',
-                                  isCorrect 
-                                    ? 'bg-success text-white' 
-                                    : isSelected && !isCorrect 
-                                    ? 'bg-destructive text-white' 
-                                    : 'bg-muted text-muted-foreground'
+                                  isCorrect
+                                    ? 'bg-success text-white'
+                                    : isSelected && !isCorrect
+                                      ? 'bg-destructive text-white'
+                                      : 'bg-muted text-muted-foreground'
                                 )}>{opt.optionLabel}</span>
                                 <span className="text-sm flex-1">{opt.optionText}</span>
                                 {isCorrect && <CheckCircle className="w-4 h-4 text-success shrink-0" />}
@@ -813,16 +813,16 @@ export default function QuizzesPage() {
         )}
 
         <div className="flex justify-between">
-          <Button variant="outline" onClick={() => { 
-             if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
-             if (!activeAttempt.submitted) {
-               if (confirm('Are you sure you want to abandon the quiz? It will be stopped, and you will only have exactly 1 attempt left to restart.')) {
-                 handleTerminateQuiz();
-               }
-             } else {
-               setActiveQuiz(null); 
-               setActiveAttempt(null); 
-             }
+          <Button variant="outline" onClick={() => {
+            if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
+            if (!activeAttempt.submitted) {
+              if (confirm('Are you sure you want to abandon the quiz? It will be stopped, and you will only have exactly 1 attempt left to restart.')) {
+                handleTerminateQuiz();
+              }
+            } else {
+              setActiveQuiz(null);
+              setActiveAttempt(null);
+            }
           }}>
             {activeAttempt.submitted ? 'Back to Quizzes' : 'Abandon Quiz'}
           </Button>
@@ -912,9 +912,9 @@ export default function QuizzesPage() {
                 <span className="text-xs text-muted-foreground">Created: {new Date(quiz.createdAt).toLocaleDateString()}</span>
                 {isStudent && quiz.isPublished && (
                   <div className="flex items-center gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
+                    <Button
+                      size="sm"
+                      variant="outline"
                       className="gap-2 text-amber-600 border-amber-400/20 hover:bg-amber-500/5 hover:text-amber-700 font-semibold"
                       onClick={() => openLeaderboard(quiz)}
                     >
@@ -922,9 +922,9 @@ export default function QuizzesPage() {
                       Leaderboard
                     </Button>
                     {quiz.quizAttempts && quiz.quizAttempts.length > 0 && (
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
+                      <Button
+                        size="sm"
+                        variant="outline"
                         className="gap-2 text-primary border-primary/20 hover:bg-primary/5 font-semibold"
                         onClick={() => reviewQuiz(quiz.quizAttempts[0].id)}
                         disabled={loadingQuiz}
@@ -944,10 +944,10 @@ export default function QuizzesPage() {
                       {quiz.hasRetakeGrant
                         ? <><RefreshCw className="w-3.5 h-3.5" /> Retake Quiz</>
                         : quiz.isExpired
-                        ? <><Timer className="w-3.5 h-3.5" /> Closed</>
-                        : quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)
-                        ? <><CheckCircle className="w-3.5 h-3.5" /> Completed</>
-                        : <><PlayCircle className="w-3.5 h-3.5" /> Start Quiz</>}
+                          ? <><Timer className="w-3.5 h-3.5" /> Closed</>
+                          : quiz.quizAttempts?.length >= (quiz.attemptLimit || 1)
+                            ? <><CheckCircle className="w-3.5 h-3.5" /> Completed</>
+                            : <><PlayCircle className="w-3.5 h-3.5" /> Start Quiz</>}
                     </Button>
                   </div>
                 )}
@@ -992,7 +992,7 @@ export default function QuizzesPage() {
               Quiz Instructions
             </DialogTitle>
           </DialogHeader>
-          
+
           <div className="my-4 space-y-4">
             <div className="bg-muted/30 border border-border p-4 rounded-xl max-h-[30vh] overflow-y-auto">
               <h4 className="font-bold text-sm mb-1">{instructionsQuiz?.title}</h4>
@@ -1003,13 +1003,13 @@ export default function QuizzesPage() {
                 {instructionsQuiz?.instructions}
               </div>
             </div>
-            
+
             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-primary/5 border border-primary/10">
-              <input 
-                type="checkbox" 
-                id="agree-checkbox" 
-                checked={agreedToInstructions} 
-                onChange={(e) => setAgreedToInstructions(e.target.checked)} 
+              <input
+                type="checkbox"
+                id="agree-checkbox"
+                checked={agreedToInstructions}
+                onChange={(e) => setAgreedToInstructions(e.target.checked)}
                 className="mt-1 rounded border-border text-primary focus:ring-primary h-4 w-4 cursor-pointer"
               />
               <Label htmlFor="agree-checkbox" className="text-xs text-foreground/80 leading-normal cursor-pointer select-none">
@@ -1022,8 +1022,8 @@ export default function QuizzesPage() {
             <Button variant="outline" onClick={() => setInstructionsQuiz(null)} className="flex-1 font-bold">
               Cancel
             </Button>
-            <Button 
-              disabled={!agreedToInstructions} 
+            <Button
+              disabled={!agreedToInstructions}
               onClick={() => {
                 const quizToStart = instructionsQuiz;
                 setInstructionsQuiz(null);
@@ -1038,7 +1038,7 @@ export default function QuizzesPage() {
       </Dialog>
 
       {/* Teacher — Grant Retake Dialog */}
-      <Dialog open={!!grantRetakeQuiz} onOpenChange={(open) => { if (!open) { setGrantRetakeQuiz(null); setGrantStudentId(''); setGrantClassId(''); }}}>
+      <Dialog open={!!grantRetakeQuiz} onOpenChange={(open) => { if (!open) { setGrantRetakeQuiz(null); setGrantStudentId(''); setGrantClassId(''); } }}>
         <DialogContent className="max-w-lg border-border bg-card rounded-2xl shadow-2xl p-6">
           <DialogHeader>
             <DialogTitle className="font-heading text-lg font-bold flex items-center gap-2">
@@ -1052,21 +1052,19 @@ export default function QuizzesPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => { setGrantTarget('student'); setGrantClassId(''); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold border transition-all ${
-                  grantTarget === 'student'
-                    ? 'bg-amber-500 text-white border-amber-500 shadow-md'
-                    : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted/60'
-                }`}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold border transition-all ${grantTarget === 'student'
+                  ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                  : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted/60'
+                  }`}
               >
                 <UserCheck className="w-4 h-4" /> Individual Student
               </button>
               <button
                 onClick={() => { setGrantTarget('class'); setGrantStudentId(''); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold border transition-all ${
-                  grantTarget === 'class'
-                    ? 'bg-amber-500 text-white border-amber-500 shadow-md'
-                    : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted/60'
-                }`}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold border transition-all ${grantTarget === 'class'
+                  ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                  : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted/60'
+                  }`}
               >
                 <Users className="w-4 h-4" /> Entire Class
               </button>
@@ -1315,7 +1313,7 @@ function MCQQuestionBuilder({ questions, setQuestions }: { questions: any[]; set
           for (let i = 0; i < line.length; i++) {
             const char = line[i];
             if (char === '"') {
-              if (inQuotes && line[i+1] === '"') {
+              if (inQuotes && line[i + 1] === '"') {
                 current += '"';
                 i++;
               } else {
@@ -1540,7 +1538,7 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
 
   useEffect(() => {
     const endpoint = isAdmin ? '/api/admin/courses' : '/api/teacher/my-courses';
-    api.get(endpoint).then(res => setCourses(Array.isArray(res) ? res : res.courses || [])).catch(() => {});
+    api.get(endpoint).then(res => setCourses(Array.isArray(res) ? res : res.courses || [])).catch(() => { });
   }, [isAdmin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1583,9 +1581,9 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
       <div className="space-y-2"><Label>Title</Label><Input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required /></div>
       <div className="space-y-2">
         <Label>Instructions (Optional)</Label>
-        <Textarea 
-          placeholder="Enter instructions students must agree to before starting the quiz..." 
-          value={form.instructions} 
+        <Textarea
+          placeholder="Enter instructions students must agree to before starting the quiz..."
+          value={form.instructions}
           onChange={e => setForm(p => ({ ...p, instructions: e.target.value }))}
           className="min-h-[80px]"
         />
@@ -1610,21 +1608,21 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
             <Label>Target Classes</Label>
             <div className="grid grid-cols-2 gap-2 p-3 border rounded-xl bg-muted/30">
               {availableClasses.map(cls => (
-                 <div key={cls.id} className="flex items-center gap-2">
-                    <input 
-                      type="checkbox" 
-                      id={`create-quiz-cls-${cls.id}`}
-                      checked={classIds.includes(cls.id.toString())}
-                      onChange={(e) => {
-                        const ids = e.target.checked 
-                          ? [...classIds, cls.id.toString()]
-                          : classIds.filter(id => id !== cls.id.toString());
-                        setClassIds(ids);
-                      }}
-                      className="rounded border-border text-primary h-4 w-4"
-                    />
-                    <Label htmlFor={`create-quiz-cls-${cls.id}`} className="text-sm font-normal cursor-pointer">{cls.name}</Label>
-                 </div>
+                <div key={cls.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`create-quiz-cls-${cls.id}`}
+                    checked={classIds.includes(cls.id.toString())}
+                    onChange={(e) => {
+                      const ids = e.target.checked
+                        ? [...classIds, cls.id.toString()]
+                        : classIds.filter(id => id !== cls.id.toString());
+                      setClassIds(ids);
+                    }}
+                    className="rounded border-border text-primary h-4 w-4"
+                  />
+                  <Label htmlFor={`create-quiz-cls-${cls.id}`} className="text-sm font-normal cursor-pointer">{cls.name}</Label>
+                </div>
               ))}
             </div>
           </div>
@@ -1635,10 +1633,10 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
         <div className="space-y-2"><Label>Attempt Limit</Label><Input type="number" min="1" value={form.attemptLimit} onChange={e => setForm(p => ({ ...p, attemptLimit: e.target.value }))} required /></div>
         <div className="space-y-2">
           <Label>Due Date (Optional)</Label>
-          <Input 
-            type="datetime-local" 
-            value={form.dueDate} 
-            onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} 
+          <Input
+            type="datetime-local"
+            value={form.dueDate}
+            onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}
           />
         </div>
       </div>
@@ -1695,12 +1693,12 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
     api.get(endpoint).then(res => {
       const fetchedCourses = Array.isArray(res) ? res : res.courses || [];
       setCourses(fetchedCourses);
-      
+
       if (initialCourseId.current) {
         const course = fetchedCourses.find((c: any) => c.id.toString() === initialCourseId.current);
         setAvailableClasses(course?.courseClasses?.map((cc: any) => cc.class) || []);
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }, [isAdmin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1747,21 +1745,21 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
         </div>
         <div className="flex flex-col gap-1 min-w-[160px]">
           <div className="relative w-full">
-            <input 
-              type="file" 
-              accept=".csv,text/csv,application/vnd.ms-excel" 
+            <input
+              type="file"
+              accept=".csv,text/csv,application/vnd.ms-excel"
               className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
-                   const event = new CustomEvent('importQuizCSV', { detail: { quizId: quiz.id, file } });
-                   window.dispatchEvent(event);
+                  const event = new CustomEvent('importQuizCSV', { detail: { quizId: quiz.id, file } });
+                  window.dispatchEvent(event);
                 }
                 e.target.value = '';
               }}
             />
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               type="button"
               className="gap-2 border-success/50 text-success hover:bg-success/10 w-full"
             >
@@ -1779,38 +1777,38 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2"><Label>Title</Label><Input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required /></div>
-      <div className="space-y-2">
-        <Label>Instructions (Optional)</Label>
-        <Textarea 
-          placeholder="Enter instructions students must agree to before starting the quiz..." 
-          value={form.instructions} 
-          onChange={e => setForm(p => ({ ...p, instructions: e.target.value }))}
-          className="min-h-[80px]"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2 space-y-2">
-          <Label>Subject</Label>
-          <Select value={form.courseId} disabled={true}>
-            <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
-            <SelectContent>
-              {courses.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.title}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <div className="space-y-2"><Label>Title</Label><Input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required /></div>
+        <div className="space-y-2">
+          <Label>Instructions (Optional)</Label>
+          <Textarea
+            placeholder="Enter instructions students must agree to before starting the quiz..."
+            value={form.instructions}
+            onChange={e => setForm(p => ({ ...p, instructions: e.target.value }))}
+            className="min-h-[80px]"
+          />
         </div>
-        {availableClasses.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2 space-y-2">
-            <Label>Target Classes</Label>
-            <div className="grid grid-cols-2 gap-2 p-3 border rounded-xl bg-muted/30">
-              {availableClasses.map(cls => (
-                 <div key={cls.id} className="flex items-center gap-2">
-                    <input 
-                      type="checkbox" 
+            <Label>Subject</Label>
+            <Select value={form.courseId} disabled={true}>
+              <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
+              <SelectContent>
+                {courses.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {availableClasses.length > 0 && (
+            <div className="col-span-2 space-y-2">
+              <Label>Target Classes</Label>
+              <div className="grid grid-cols-2 gap-2 p-3 border rounded-xl bg-muted/30">
+                {availableClasses.map(cls => (
+                  <div key={cls.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
                       id={`edit-quiz-cls-${cls.id}`}
                       checked={classIds.includes(cls.id.toString())}
                       onChange={(e) => {
-                        const ids = e.target.checked 
+                        const ids = e.target.checked
                           ? [...classIds, cls.id.toString()]
                           : classIds.filter(id => id !== cls.id.toString());
                         setClassIds(ids);
@@ -1818,58 +1816,58 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
                       className="rounded border-border text-primary h-4 w-4"
                     />
                     <Label htmlFor={`edit-quiz-cls-${cls.id}`} className="text-sm font-normal cursor-pointer">{cls.name}</Label>
-                 </div>
-              ))}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-      <div className="grid grid-cols-4 gap-3">
-        <div className="space-y-2"><Label>Duration (min)</Label><Input type="number" min="1" value={form.timeLimit} onChange={e => setForm(p => ({ ...p, timeLimit: e.target.value }))} required /></div>
-        <div className="space-y-2"><Label>Attempt Limit</Label><Input type="number" min="1" value={form.attemptLimit} onChange={e => setForm(p => ({ ...p, attemptLimit: e.target.value }))} required /></div>
-        <div className="space-y-2">
-          <Label>Publish?</Label>
-          <Select value={form.isPublished ? 'true' : 'false'} onValueChange={v => setForm(p => ({ ...p, isPublished: v === 'true' }))}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="false">Draft</SelectItem>
-              <SelectItem value="true">Published</SelectItem>
-            </SelectContent>
-          </Select>
+          )}
         </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs">Due Date</Label>
-            {form.dueDate && (
-              <button 
-                type="button" 
-                onClick={() => setForm(p => ({ ...p, dueDate: '' }))}
-                className="text-[10px] text-destructive hover:underline"
-              >
-                Clear
-              </button>
-            )}
+        <div className="grid grid-cols-4 gap-3">
+          <div className="space-y-2"><Label>Duration (min)</Label><Input type="number" min="1" value={form.timeLimit} onChange={e => setForm(p => ({ ...p, timeLimit: e.target.value }))} required /></div>
+          <div className="space-y-2"><Label>Attempt Limit</Label><Input type="number" min="1" value={form.attemptLimit} onChange={e => setForm(p => ({ ...p, attemptLimit: e.target.value }))} required /></div>
+          <div className="space-y-2">
+            <Label>Publish?</Label>
+            <Select value={form.isPublished ? 'true' : 'false'} onValueChange={v => setForm(p => ({ ...p, isPublished: v === 'true' }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="false">Draft</SelectItem>
+                <SelectItem value="true">Published</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <Input 
-            type="datetime-local" 
-            value={form.dueDate} 
-            onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} 
-            className="text-xs h-9"
-          />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Due Date</Label>
+              {form.dueDate && (
+                <button
+                  type="button"
+                  onClick={() => setForm(p => ({ ...p, dueDate: '' }))}
+                  className="text-[10px] text-destructive hover:underline"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <Input
+              type="datetime-local"
+              value={form.dueDate}
+              onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}
+              className="text-xs h-9"
+            />
+          </div>
         </div>
-      </div>
 
-      <hr className="border-border" />
+        <hr className="border-border" />
 
-      <MCQQuestionBuilder questions={questions} setQuestions={setQuestions} />
+        <MCQQuestionBuilder questions={questions} setQuestions={setQuestions} />
 
-      <div className="flex justify-end gap-2 pt-2">
-        <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-        <Button type="submit" disabled={loading}>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
-        </Button>
-      </div>
-    </form>
-  </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }
