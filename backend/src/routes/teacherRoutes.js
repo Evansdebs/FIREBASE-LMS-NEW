@@ -68,10 +68,12 @@ router.delete('/timetable/:id', teacherController.deleteTimetableEntry);
 router.get('/assignments', cacheMiddleware, teacherController.getMyAssignments);
 router.post('/assignments', upload.single('file'), teacherController.createAssignment);
 router.put('/assignments/:id', upload.single('file'), teacherController.updateAssignment);
+router.patch('/assignments/:id/publish', teacherController.publishAssignment);
 router.delete('/assignments/:id', teacherController.deleteAssignment);
 router.get('/assignments/:id/export-grades', teacherController.exportAssignmentGrades);
 router.get('/assignments/:id/submissions', teacherController.getAssignmentSubmissions);
 router.put('/submissions/:id/grade', teacherController.gradeSubmission);
+
 
 // Attendance
 router.get('/attendance', teacherController.getAttendance);

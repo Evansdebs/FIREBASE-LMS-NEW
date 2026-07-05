@@ -1022,6 +1022,7 @@ const createAssignment = async (req, res) => {
           courseId: parseInt(courseId), title, description,
           deadline: new Date(deadline), maxScore: computedMaxScore,
           filePath: req.file ? req.file.path : null,
+          isPublished: false, // Assignments start as drafts
           createdBy: teacher.id,
         },
       });
@@ -2304,6 +2305,76 @@ const getQuizLeaderboard = async (req, res) => {
   }
 };
 
+// ─── PUBLISH / UNPUBLISH ASSIGNMENT ─────────────────────────────────────
+const publishAssignment = async (req, res) => {
+  try {
+    const teacher = await prisma.teacher.findUnique({ where: { userId: req.user.id } });
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found.' });
+
+    const assignmentId = parseInt(req.params.id);
+
+    const existing = await prisma.assignment.findUnique({
+      where: { id: assignmentId },
+      include: {
+        assignmentClasses: { include: { class: { include: { students: { include: { user: true } } } } } },
+      },
+    });
+    if (!existing) return res.status(404).json({ error: 'Assignment not found.' });
+    if (existing.createdBy !== teacher.id) return res.status(403).json({ error: 'Not your assignment.' });
+
+    const newStatus = !existing.isPublished;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const ass = await tx.assignment.update({
+        where: { id: assignmentId },
+        data: { isPublished: newStatus },
+      });
+
+      // Notify enrolled students when publishing
+      if (newStatus) {
+        const studentUsers = existing.assignmentClasses.flatMap(ac =>
+          ac.class.students.map(s => s.user)
+        );
+        const uniqueStudentIds = [...new Set(studentUsers.map(u => u.id))];
+        for (const userId of uniqueStudentIds) {
+          await tx.notification.create({
+            data: {
+              userId,
+              type: 'ASSIGNMENT_PUBLISHED',
+              title: 'New Assignment Available',
+              message: `"${existing.title}" has been published. Deadline: ${new Date(existing.deadline).toLocaleDateString()}.`,
+            },
+          });
+        }
+        await tx.auditLog.create({
+          data: {
+            userId: req.user.id,
+            action: 'ASSIGNMENT_PUBLISH',
+            details: `Published assignment: "${existing.title}"`,
+            ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+          },
+        });
+      } else {
+        await tx.auditLog.create({
+          data: {
+            userId: req.user.id,
+            action: 'ASSIGNMENT_UNPUBLISH',
+            details: `Unpublished assignment: "${existing.title}"`,
+            ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+          },
+        });
+      }
+
+      return ass;
+    });
+
+    res.json({ id: updated.id, isPublished: updated.isPublished });
+  } catch (err) {
+    console.error('Publish assignment error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
 module.exports = {
   getDashboard, getRiskReport,
   getMyCourses, getCourseDetails, getCourseOverview,
@@ -2312,6 +2383,7 @@ module.exports = {
   createQuiz, updateQuiz, deleteQuiz, getQuizById, getQuizResults,
   grantRetake, revokeRetake, getRetakeGrants,
   createAssignment, updateAssignment, getAssignmentSubmissions, gradeSubmission, deleteAssignment, exportAssignmentGrades,
+  publishAssignment,
   markAttendance, getAttendance,
   createLiveClass, getMyLiveClasses, updateLiveClass, deleteLiveClass,
   getMyQuizzes, getMyAssignments,

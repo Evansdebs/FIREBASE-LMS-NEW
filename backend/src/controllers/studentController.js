@@ -705,7 +705,10 @@ const getMyAssignments = async (req, res) => {
     if (!student) return res.status(404).json({ error: 'Student not found.' });
 
     const assignments = await prisma.assignment.findMany({
-      where: { assignmentClasses: { some: { classId: student.classId } } },
+      where: {
+        assignmentClasses: { some: { classId: student.classId } },
+        isPublished: true, // Only show published assignments to students
+      },
       include: {
         course: { select: { title: true } },
         submissions: { where: { studentId: student.id } },

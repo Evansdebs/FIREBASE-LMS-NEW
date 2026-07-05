@@ -312,6 +312,7 @@ model Assignment {
   deadline          DateTime
   maxScore          Int               @default(100)
   filePath          String?
+  isPublished       Boolean           @default(false)
   createdBy         Int
   createdAt         DateTime          @default(now())
   creator           Teacher           @relation(fields: [createdBy], references: [id], onDelete: Cascade)
@@ -322,6 +323,7 @@ model Assignment {
 
   @@map("assignments")
 }
+
 
 model AssignmentClass {
   id           Int        @id @default(autoincrement())

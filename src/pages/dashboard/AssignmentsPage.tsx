@@ -13,7 +13,7 @@ import { Progress } from '@/components/ui/progress';
 import { api } from '@/lib/api';
 import {
   Plus, Search, FileText, Upload, Download, Clock, CheckCircle, XCircle,
-  MessageSquare, Loader2, Trash2, Edit, ListChecks, GripVertical
+  MessageSquare, Loader2, Trash2, Edit, ListChecks, GripVertical, Globe, EyeOff
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -135,6 +135,8 @@ export default function AssignmentsPage() {
   const filtered = assignments.filter(a => {
     const matchSearch = a.title.toLowerCase().includes(search.toLowerCase());
     const status = a.submissions?.length > 0 ? (a.submissions[0].grade != null ? 'graded' : 'submitted') : (new Date(a.dueDate) < new Date() ? 'overdue' : 'pending');
+    if (statusFilter === 'draft') return matchSearch && !a.isPublished;
+    if (statusFilter === 'published') return matchSearch && a.isPublished;
     const matchStatus = statusFilter === 'all' || status === statusFilter;
     return matchSearch && matchStatus;
   });
@@ -288,6 +290,17 @@ export default function AssignmentsPage() {
       fetchAssignments();
     } catch (err: any) {
       toast.error(err.message);
+    }
+  };
+
+  const handleTogglePublish = async (assignment: any) => {
+    try {
+      const res = await api.patch(`/api/teacher/assignments/${assignment.id}/publish`, {});
+      const action = res.isPublished ? 'Published' : 'Unpublished';
+      toast.success(`${action} "${assignment.title}" successfully`);
+      fetchAssignments();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update publish status.');
     }
   };
 
@@ -522,6 +535,8 @@ export default function AssignmentsPage() {
               <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
+                {canManage && <SelectItem value="draft">Draft</SelectItem>}
+                {canManage && <SelectItem value="published">Published</SelectItem>}
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="submitted">Submitted</SelectItem>
                 <SelectItem value="graded">Graded</SelectItem>
@@ -552,6 +567,17 @@ export default function AssignmentsPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-heading font-semibold text-card-foreground">{a.title}</h3>
                         {statusBadge(status)}
+                        {canManage && (
+                          a.isPublished ? (
+                            <Badge variant="outline" className="border-emerald-500/30 text-emerald-500 bg-emerald-500/5 text-xs gap-1">
+                              <Globe className="w-3 h-3" /> Published
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-amber-500/30 text-amber-500 bg-amber-500/5 text-xs gap-1">
+                              <EyeOff className="w-3 h-3" /> Draft
+                            </Badge>
+                          )
+                        )}
                         {hasRubricCriteria && (
                           <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 text-xs gap-1">
                             <ListChecks className="w-3 h-3" /> Rubric
@@ -615,7 +641,24 @@ export default function AssignmentsPage() {
                       </Button>
                     )}
                     {canManage && (
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center flex-wrap justify-end">
+                        <Button
+                          size="sm"
+                          variant={a.isPublished ? 'outline' : 'default'}
+                          className={cn(
+                            'gap-1.5',
+                            a.isPublished
+                              ? 'border-amber-500/40 text-amber-500 hover:bg-amber-500/10'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          )}
+                          onClick={() => handleTogglePublish(a)}
+                        >
+                          {a.isPublished ? (
+                            <><EyeOff className="w-3.5 h-3.5" /> Unpublish</>
+                          ) : (
+                            <><Globe className="w-3.5 h-3.5" /> Publish</>
+                          )}
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => handleViewSubmissions(a)}>View Submissions</Button>
                         <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-primary hover:bg-primary/20 font-semibold" onClick={() => handleEditAssignment(a)}>
                           <Edit className="w-4 h-4" />

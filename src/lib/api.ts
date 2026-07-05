@@ -78,6 +78,16 @@ export const api = {
     requestCache.clear();
     return data;
   },
+  patch: async (url: string, body: any, options: ApiRequestOptions = {}) => {
+    const isFormData = body instanceof FormData;
+    const data = await apiFetch(url, {
+        ...options,
+        method: 'PATCH',
+        body: isFormData ? body : JSON.stringify(body)
+    });
+    requestCache.clear();
+    return data;
+  },
   delete: async (url: string, options: ApiRequestOptions = {}) => {
     const res = await apiFetch(url, { ...options, method: 'DELETE' });
     requestCache.clear();
