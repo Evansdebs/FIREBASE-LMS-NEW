@@ -8,39 +8,27 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Slider } from '@/components/ui/slider';
+import { Progress } from '@/components/ui/progress';
 import { api } from '@/lib/api';
-import { Plus, Search, FileText, Upload, Download, Clock, CheckCircle, XCircle, MessageSquare, Loader2, Trash2, Edit } from 'lucide-react';
+import {
+  Plus, Search, FileText, Upload, Download, Clock, CheckCircle, XCircle,
+  MessageSquare, Loader2, Trash2, Edit, ListChecks, GripVertical
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-interface Assignment {
-  id: string;
-  title: string;
-  course: string;
-  description: string;
-  dueDate: string;
-  status: 'pending' | 'submitted' | 'graded' | 'overdue';
-  grade?: number;
-  maxGrade: number;
-  feedback?: string;
-  submittedAt?: string;
-  submissions?: number;
-  totalStudents?: number;
+interface RubricCriterion {
+  id?: number;
+  name: string;
+  maxPoints: number;
 }
 
-const STUDENT_ASSIGNMENTS: Assignment[] = [
-  { id: '1', title: 'Linear Equations Problem Set', course: 'Advanced Mathematics', description: 'Solve problems 1-20 from Chapter 3.', dueDate: '2026-04-02', status: 'pending', maxGrade: 100 },
-  { id: '2', title: 'Newton\'s Laws Lab Report', course: 'Physics 101', description: 'Write a detailed lab report on the pendulum experiment.', dueDate: '2026-03-30', status: 'submitted', maxGrade: 100, submittedAt: '2026-03-28' },
-  { id: '3', title: 'Poetry Analysis Essay', course: 'English Literature', description: 'Analyze the themes in "The Road Not Taken".', dueDate: '2026-03-25', status: 'graded', maxGrade: 100, grade: 88, feedback: 'Excellent analysis of metaphor. Could improve thesis statement.', submittedAt: '2026-03-24' },
-  { id: '4', title: 'Chemical Bonding Worksheet', course: 'Chemistry Lab', description: 'Complete the ionic and covalent bonding exercises.', dueDate: '2026-03-20', status: 'overdue', maxGrade: 50 },
-];
-
-const TEACHER_ASSIGNMENTS: Assignment[] = [
-  { id: '1', title: 'Linear Equations Problem Set', course: 'Advanced Mathematics', description: 'Solve problems 1-20 from Chapter 3.', dueDate: '2026-04-02', status: 'pending', maxGrade: 100, submissions: 18, totalStudents: 32 },
-  { id: '2', title: 'Quadratic Functions Quiz', course: 'Advanced Mathematics', description: 'Quiz on quadratic equations and graphing.', dueDate: '2026-03-30', status: 'pending', maxGrade: 50, submissions: 30, totalStudents: 32 },
-  { id: '3', title: 'Calculus Homework 1', course: 'Advanced Mathematics', description: 'Derivatives practice problems.', dueDate: '2026-03-25', status: 'graded', maxGrade: 100, submissions: 32, totalStudents: 32 },
-];
+interface RubricScore {
+  criterionId: number;
+  points: number;
+  criterion?: { name: string; maxPoints: number };
+}
 
 export default function AssignmentsPage() {
   const { user } = useAuth();
@@ -54,11 +42,13 @@ export default function AssignmentsPage() {
   const [submissionsData, setSubmissionsData] = useState<any[]>([]);
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
   const [gradingSubmission, setGradingSubmission] = useState<any | null>(null);
-  const [gradingPayload, setGradingPayload] = useState({ grade: '', feedback: '' });
+  const [gradingPayload, setGradingPayload] = useState<{ grade: string; feedback: string; rubricScores: RubricScore[] }>({
+    grade: '', feedback: '', rubricScores: []
+  });
   const [submitting, setSubmitting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
-  // Create Assignment State
+  // Create / Edit State
   const [courses, setCourses] = useState<any[]>([]);
   const [availableClasses, setAvailableClasses] = useState<any[]>([]);
   const [createPayload, setCreatePayload] = useState<{
@@ -68,8 +58,9 @@ export default function AssignmentsPage() {
     deadline: string;
     maxScore: string;
     classIds: string[];
+    rubric: RubricCriterion[];
   }>({
-    courseId: '', title: '', description: '', deadline: '', maxScore: '100', classIds: []
+    courseId: '', title: '', description: '', deadline: '', maxScore: '100', classIds: [], rubric: []
   });
   const [editingAssignment, setEditingAssignment] = useState<any | null>(null);
   const [submitText, setSubmitText] = useState('');
@@ -79,6 +70,27 @@ export default function AssignmentsPage() {
   const isTeacher = user?.role === 'teacher';
   const canManage = isAdmin || isTeacher;
 
+  // ─── Rubric helpers ───────────────────────────────────
+  const rubricTotal = createPayload.rubric.reduce((s, c) => s + (parseInt(String(c.maxPoints)) || 0), 0);
+  const hasRubric = createPayload.rubric.length > 0;
+
+  const addCriterion = () => {
+    setCreatePayload(prev => ({ ...prev, rubric: [...prev.rubric, { name: '', maxPoints: 10 }] }));
+  };
+
+  const removeCriterion = (idx: number) => {
+    setCreatePayload(prev => ({ ...prev, rubric: prev.rubric.filter((_, i) => i !== idx) }));
+  };
+
+  const updateCriterion = (idx: number, field: keyof RubricCriterion, value: string | number) => {
+    setCreatePayload(prev => {
+      const rubric = [...prev.rubric];
+      rubric[idx] = { ...rubric[idx], [field]: field === 'maxPoints' ? parseInt(String(value)) || 0 : value };
+      return { ...prev, rubric };
+    });
+  };
+
+  // ─── Data Fetching ───────────────────────────────────
   useEffect(() => {
     fetchAssignments();
     if (canManage) fetchCourses();
@@ -98,7 +110,6 @@ export default function AssignmentsPage() {
     const selectedCourse = courses.find(c => c.id.toString() === courseId);
     setCreatePayload(prev => ({ ...prev, courseId, classIds: [] }));
     if (selectedCourse) {
-      // Assuming course has courseClasses or we can derive from subject
       const classes = selectedCourse.courseClasses?.map((cc: any) => cc.class) || [];
       setAvailableClasses(classes);
     } else {
@@ -109,8 +120,8 @@ export default function AssignmentsPage() {
   const fetchAssignments = async () => {
     try {
       setLoading(true);
-      let endpoint = isStudent ? '/api/student/assignments' : 
-                     isTeacher ? '/api/teacher/assignments' : 
+      let endpoint = isStudent ? '/api/student/assignments' :
+                     isTeacher ? '/api/teacher/assignments' :
                      '/api/admin/assignments';
       const res = await api.get(endpoint);
       setAssignments(Array.isArray(res) ? res : res.assignments || []);
@@ -123,7 +134,8 @@ export default function AssignmentsPage() {
 
   const filtered = assignments.filter(a => {
     const matchSearch = a.title.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === 'all' || a.status === statusFilter;
+    const status = a.submissions?.length > 0 ? (a.submissions[0].grade != null ? 'graded' : 'submitted') : (new Date(a.dueDate) < new Date() ? 'overdue' : 'pending');
+    const matchStatus = statusFilter === 'all' || status === statusFilter;
     return matchSearch && matchStatus;
   });
 
@@ -137,10 +149,17 @@ export default function AssignmentsPage() {
     return <Badge variant="outline" className={cn('font-medium capitalize', styles[status])}>{status}</Badge>;
   };
 
+  // ─── Create / Edit Assignment ─────────────────────────
   const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createPayload.courseId) return toast.error('Please select a course.');
-    
+
+    // Validate rubric
+    if (hasRubric) {
+      const invalid = createPayload.rubric.some(c => !c.name.trim() || c.maxPoints <= 0);
+      if (invalid) return toast.error('Each rubric criterion needs a name and points > 0.');
+    }
+
     try {
       setSubmitting(true);
       const formData = new FormData();
@@ -148,8 +167,13 @@ export default function AssignmentsPage() {
       formData.append('title', createPayload.title);
       formData.append('description', createPayload.description);
       formData.append('deadline', createPayload.deadline);
-      formData.append('maxScore', createPayload.maxScore);
       formData.append('classIds', JSON.stringify(createPayload.classIds));
+      if (hasRubric) {
+        formData.append('rubric', JSON.stringify(createPayload.rubric));
+        // maxScore derived server-side from rubric sum
+      } else {
+        formData.append('maxScore', createPayload.maxScore);
+      }
       if (file) formData.append('file', file);
 
       if (editingAssignment) {
@@ -159,11 +183,11 @@ export default function AssignmentsPage() {
         await api.upload(isAdmin ? '/api/admin/assignments' : '/api/teacher/assignments', formData);
         toast.success('Assignment created successfully!');
       }
-      
+
       setShowCreate(false);
       setEditingAssignment(null);
       setFile(null);
-      setCreatePayload({ courseId: '', title: '', description: '', deadline: '', maxScore: '100', classIds: [] });
+      setCreatePayload({ courseId: '', title: '', description: '', deadline: '', maxScore: '100', classIds: [], rubric: [] });
       setAvailableClasses([]);
       fetchAssignments();
     } catch (err: any) {
@@ -173,11 +197,11 @@ export default function AssignmentsPage() {
     }
   };
 
+  // ─── Student Submission ───────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showSubmit) return;
     if (!submitText && !file) return toast.error('Please provide either a text response or a file attachment.');
-
     try {
       setSubmitting(true);
       const formData = new FormData();
@@ -195,6 +219,7 @@ export default function AssignmentsPage() {
     }
   };
 
+  // ─── Teacher Submissions View ─────────────────────────
   const handleViewSubmissions = async (assignment: any) => {
     setShowSubmissionsFor(assignment);
     setLoadingSubmissions(true);
@@ -208,15 +233,46 @@ export default function AssignmentsPage() {
     }
   };
 
+  const openGradeDialog = (sub: any) => {
+    setGradingSubmission(sub);
+    const criteria = showSubmissionsFor?.rubricCriteria || [];
+    if (criteria.length > 0) {
+      // Pre-fill from existing rubric scores if any
+      const scores: RubricScore[] = criteria.map((c: any) => {
+        const existing = sub.rubricScores?.find((rs: any) => rs.criterionId === c.id);
+        return { criterionId: c.id, points: existing?.points ?? 0 };
+      });
+      setGradingPayload({ grade: '', feedback: sub.feedback || '', rubricScores: scores });
+    } else {
+      setGradingPayload({ grade: sub.grade?.toString() || '', feedback: sub.feedback || '', rubricScores: [] });
+    }
+  };
+
   const handleSubmitGrade = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!gradingSubmission) return;
+    const criteria = showSubmissionsFor?.rubricCriteria || [];
+    const useRubric = criteria.length > 0;
+
+    if (useRubric) {
+      const total = gradingPayload.rubricScores.reduce((s, rs) => s + rs.points, 0);
+      if (total > showSubmissionsFor.maxScore) {
+        return toast.error(`Total rubric score (${total}) exceeds max score (${showSubmissionsFor.maxScore}).`);
+      }
+    }
+
     try {
       setSubmitting(true);
-      await api.put(`/api/teacher/submissions/${gradingSubmission.id}/grade`, gradingPayload);
+      const payload: any = { feedback: gradingPayload.feedback };
+      if (useRubric) {
+        payload.rubricScores = gradingPayload.rubricScores;
+      } else {
+        payload.grade = gradingPayload.grade;
+      }
+      await api.put(`/api/teacher/submissions/${gradingSubmission.id}/grade`, payload);
       toast.success('Grade submitted successfully');
       setGradingSubmission(null);
-      handleViewSubmissions(showSubmissionsFor); // Refresh submissions
+      handleViewSubmissions(showSubmissionsFor);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -268,7 +324,8 @@ export default function AssignmentsPage() {
       description: assignment.description || '',
       deadline: assignment.deadline ? new Date(assignment.deadline).toISOString().split('T')[0] : '',
       maxScore: assignment.maxScore.toString(),
-      classIds: assignment.assignmentClasses?.map((ac: any) => ac.classId.toString()) || []
+      classIds: assignment.assignmentClasses?.map((ac: any) => ac.classId.toString()) || [],
+      rubric: assignment.rubricCriteria?.map((c: any) => ({ id: c.id, name: c.name, maxPoints: c.maxPoints })) || [],
     });
     setShowCreate(true);
   };
@@ -290,17 +347,30 @@ export default function AssignmentsPage() {
           </p>
         </div>
         {!isStudent && (
-          <Dialog open={showCreate} onOpenChange={setShowCreate}>
+          <Dialog open={showCreate} onOpenChange={(open) => {
+            setShowCreate(open);
+            if (!open) {
+              setEditingAssignment(null);
+              setCreatePayload({ courseId: '', title: '', description: '', deadline: '', maxScore: '100', classIds: [], rubric: [] });
+              setAvailableClasses([]);
+              setFile(null);
+            }
+          }}>
             <DialogTrigger asChild>
               <Button className="gap-2"><Plus className="w-4 h-4" /> Create Assignment</Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle className="font-heading">Create Assignment</DialogTitle></DialogHeader>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="font-heading">{editingAssignment ? 'Edit Assignment' : 'Create Assignment'}</DialogTitle>
+              </DialogHeader>
               <form onSubmit={handleCreateAssignment} className="space-y-4 py-2">
+                {/* Title */}
                 <div className="space-y-2">
                   <Label>Title</Label>
                   <Input required value={createPayload.title} onChange={e => setCreatePayload(prev => ({ ...prev, title: e.target.value }))} />
                 </div>
+
+                {/* Course */}
                 <div className="space-y-2">
                   <Label>Course / Subject</Label>
                   <Select value={createPayload.courseId} onValueChange={handleCourseChange}>
@@ -312,18 +382,20 @@ export default function AssignmentsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Classes */}
                 {availableClasses.length > 0 && (
                   <div className="space-y-2">
                     <Label>Assign to Classes</Label>
                     <div className="grid grid-cols-2 gap-2 p-3 border rounded-xl bg-muted/30">
                       {availableClasses.map(cls => (
                         <div key={cls.id} className="flex items-center gap-2">
-                          <input 
-                            type="checkbox" 
+                          <input
+                            type="checkbox"
                             id={`cls-${cls.id}`}
                             checked={createPayload.classIds.includes(cls.id.toString())}
                             onChange={(e) => {
-                              const ids = e.target.checked 
+                              const ids = e.target.checked
                                 ? [...createPayload.classIds, cls.id.toString()]
                                 : createPayload.classIds.filter(id => id !== cls.id.toString());
                               setCreatePayload(prev => ({ ...prev, classIds: ids }));
@@ -336,20 +408,86 @@ export default function AssignmentsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Description */}
                 <div className="space-y-2">
                   <Label>Description</Label>
                   <Textarea required value={createPayload.description} onChange={e => setCreatePayload(prev => ({ ...prev, description: e.target.value }))} />
                 </div>
+
+                {/* Due Date & Max Grade row */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Due Date</Label>
                     <Input type="date" required value={createPayload.deadline} onChange={e => setCreatePayload(prev => ({ ...prev, deadline: e.target.value }))} />
                   </div>
                   <div className="space-y-2">
-                    <Label>Max Grade</Label>
-                    <Input type="number" required value={createPayload.maxScore} onChange={e => setCreatePayload(prev => ({ ...prev, maxScore: e.target.value }))} />
+                    <Label>Max Grade {hasRubric && <span className="text-muted-foreground text-xs">(auto from rubric)</span>}</Label>
+                    <Input
+                      type="number"
+                      required={!hasRubric}
+                      value={hasRubric ? rubricTotal.toString() : createPayload.maxScore}
+                      readOnly={hasRubric}
+                      className={cn(hasRubric && 'bg-muted text-muted-foreground cursor-not-allowed')}
+                      onChange={e => !hasRubric && setCreatePayload(prev => ({ ...prev, maxScore: e.target.value }))}
+                    />
                   </div>
                 </div>
+
+                {/* ── Rubric Criteria Section ── */}
+                <div className="space-y-3 border border-border rounded-xl p-4 bg-muted/20">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ListChecks className="w-4 h-4 text-primary" />
+                      <Label className="text-sm font-semibold">Rubric Criteria</Label>
+                      <Badge variant="outline" className="text-xs">Optional</Badge>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" onClick={addCriterion} className="gap-1.5 h-7 text-xs">
+                      <Plus className="w-3 h-3" /> Add Criterion
+                    </Button>
+                  </div>
+
+                  {createPayload.rubric.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-2">
+                      No rubric defined — assignment will use a single flat grade.
+                      <br />Click "Add Criterion" to define rubric-based grading.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {createPayload.rubric.map((criterion, idx) => (
+                        <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-background border border-border">
+                          <GripVertical className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <Input
+                            placeholder="Criterion name (e.g. Content)"
+                            value={criterion.name}
+                            onChange={e => updateCriterion(idx, 'name', e.target.value)}
+                            className="flex-1 h-8 text-sm"
+                          />
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Input
+                              type="number"
+                              min={1}
+                              max={500}
+                              value={criterion.maxPoints}
+                              onChange={e => updateCriterion(idx, 'maxPoints', e.target.value)}
+                              className="w-20 h-8 text-sm text-center"
+                            />
+                            <span className="text-xs text-muted-foreground">pts</span>
+                          </div>
+                          <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10" onClick={() => removeCriterion(idx)}>
+                            <XCircle className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      <div className="flex justify-between items-center text-xs text-muted-foreground pt-1 px-1">
+                        <span>{createPayload.rubric.length} criteria</span>
+                        <span className="font-semibold text-primary">Total: {rubricTotal} pts</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* File Upload */}
                 <div className="space-y-2">
                   <Label>Attachments</Label>
                   <div className={cn("border-2 border-dashed border-border rounded-xl p-4 text-center cursor-pointer hover:border-primary/50 transition-colors", file && "border-primary bg-primary/5")} onClick={() => document.getElementById('assignment-file-upload')?.click()}>
@@ -358,11 +496,12 @@ export default function AssignmentsPage() {
                     <input type="file" id="assignment-file-upload" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
                   </div>
                 </div>
+
                 <div className="flex justify-end gap-2 pt-2">
                   <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
                   <Button type="submit" disabled={submitting}>
                     {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Create
+                    {editingAssignment ? 'Update' : 'Create'}
                   </Button>
                 </div>
               </form>
@@ -371,6 +510,7 @@ export default function AssignmentsPage() {
         )}
       </div>
 
+      {/* Filters */}
       <Card className="border-border">
         <CardContent className="p-4">
           <div className="flex flex-wrap gap-3">
@@ -392,11 +532,14 @@ export default function AssignmentsPage() {
         </CardContent>
       </Card>
 
+      {/* Assignment List */}
       <div className="space-y-3">
         {loading ? (
           <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
         ) : filtered.map((a: any) => {
-          const status = a.submissions?.length > 0 ? (a.submissions[0].grade ? 'graded' : 'submitted') : (new Date(a.dueDate) < new Date() ? 'overdue' : 'pending');
+          const status = a.submissions?.length > 0 ? (a.submissions[0].grade != null ? 'graded' : 'submitted') : (new Date(a.dueDate) < new Date() ? 'overdue' : 'pending');
+          const sub = a.submissions?.[0];
+          const hasRubricCriteria = (a.rubricCriteria?.length ?? 0) > 0;
           return (
             <Card key={a.id} className="border-border hover:shadow-md transition-shadow">
               <CardContent className="p-4">
@@ -409,42 +552,61 @@ export default function AssignmentsPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-heading font-semibold text-card-foreground">{a.title}</h3>
                         {statusBadge(status)}
+                        {hasRubricCriteria && (
+                          <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 text-xs gap-1">
+                            <ListChecks className="w-3 h-3" /> Rubric
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">{a.course?.title || 'Subject'}</p>
                       <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{a.description}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Due: {new Date(a.dueDate).toLocaleDateString()}</span>
-                        {a.submissions?.[0]?.submittedAt && <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-success" /> Submitted: {new Date(a.submissions[0].submittedAt).toLocaleDateString()}</span>}
-                        {canManage && (
-                          <span className="flex items-center gap-1"><Upload className="w-3 h-3" /> {a._count?.submissions || 0} submitted</span>
-                        )}
+                        {sub?.submittedAt && <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-success" /> Submitted: {new Date(sub.submittedAt).toLocaleDateString()}</span>}
+                        {canManage && <span className="flex items-center gap-1"><Upload className="w-3 h-3" /> {a._count?.submissions || 0} submitted</span>}
                       </div>
                       {a.filePath && (
                         <div className="mt-2">
-                           <a href={`${import.meta.env.VITE_API_URL || ''}/${a.filePath}`.replace(/\\/g, '/')} target="_blank" rel="noopener noreferrer" className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 font-semibold">
-                             <FileText className="w-3 h-3" /> View Attachment
-                           </a>
+                          <a href={`${import.meta.env.VITE_API_URL || ''}/${a.filePath}`.replace(/\\/g, '/')} target="_blank" rel="noopener noreferrer" className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 font-semibold">
+                            <FileText className="w-3 h-3" /> View Attachment
+                          </a>
                         </div>
                       )}
-                      {a.submissions?.[0]?.grade !== undefined && a.submissions?.[0]?.grade !== null && (
-                        <div className="mt-2 p-2 bg-success/5 rounded-lg">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-success">{a.submissions[0].grade}/{a.maxGrade || 100}</span>
-                            {a.submissions[0].feedback && (
+
+                      {/* Student grade display — rubric breakdown or flat */}
+                      {isStudent && sub?.grade != null && (
+                        <div className="mt-3 p-3 bg-success/5 rounded-xl border border-success/20">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-semibold text-success">{sub.grade}/{a.maxScore || 100}</span>
+                            {sub.feedback && (
                               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                <MessageSquare className="w-3 h-3" /> {a.submissions[0].feedback}
+                                <MessageSquare className="w-3 h-3" /> {sub.feedback}
                               </span>
                             )}
                           </div>
+                          {/* Per-criterion breakdown */}
+                          {sub.rubricScores?.length > 0 && (
+                            <div className="space-y-1.5 mt-2 pt-2 border-t border-success/15">
+                              {sub.rubricScores.map((rs: RubricScore) => (
+                                <div key={rs.criterionId} className="flex items-center gap-2 text-xs">
+                                  <span className="text-muted-foreground flex-1 truncate">{rs.criterion?.name}</span>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <Progress value={rs.criterion?.maxPoints ? (rs.points / rs.criterion.maxPoints) * 100 : 0} className="w-20 h-1.5" />
+                                    <span className="font-medium text-foreground w-12 text-right">{rs.points}/{rs.criterion?.maxPoints}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                   </div>
                   <div className="shrink-0">
                     {isStudent && (status === 'pending' || status === 'overdue' || status === 'submitted') && (
-                      <Button 
-                        size="sm" 
-                        variant={status === 'submitted' ? "outline" : (status === 'overdue' ? "destructive" : "default")} 
+                      <Button
+                        size="sm"
+                        variant={status === 'submitted' ? "outline" : (status === 'overdue' ? "destructive" : "default")}
                         onClick={() => handleOpenSubmit(a)}
                         disabled={status === 'overdue'}
                         className={cn(status === 'overdue' && "opacity-50 cursor-not-allowed")}
@@ -474,21 +636,33 @@ export default function AssignmentsPage() {
         )}
       </div>
 
-      {/* Submit Dialog */}
+      {/* ── Student Submit Dialog ── */}
       <Dialog open={!!showSubmit} onOpenChange={() => setShowSubmit(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle className="font-heading">{showSubmit?.submissions?.[0] ? 'Edit Submission' : 'Submit Assignment'}</DialogTitle></DialogHeader>
           {showSubmit && (
             <form onSubmit={handleSubmit} className="space-y-4 py-2">
               <p className="text-sm text-muted-foreground">{showSubmit.title}</p>
+              {/* Show rubric criteria to student for reference */}
+              {showSubmit.rubricCriteria?.length > 0 && (
+                <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 space-y-1.5">
+                  <p className="text-xs font-semibold text-primary flex items-center gap-1.5 mb-2">
+                    <ListChecks className="w-3.5 h-3.5" /> Grading Rubric
+                  </p>
+                  {showSubmit.rubricCriteria.map((c: any) => (
+                    <div key={c.id} className="flex justify-between text-xs text-muted-foreground">
+                      <span>{c.name}</span>
+                      <span className="font-medium">{c.maxPoints} pts</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-primary/15 pt-1 mt-1 flex justify-between text-xs font-semibold">
+                    <span>Total</span><span>{showSubmit.maxScore} pts</span>
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Your Answer / Notes (Optional if attaching file)</Label>
-                <Textarea 
-                  rows={4} 
-                  placeholder="Write your response..." 
-                  value={submitText}
-                  onChange={e => setSubmitText(e.target.value)}
-                />
+                <Textarea rows={4} placeholder="Write your response..." value={submitText} onChange={e => setSubmitText(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Attach Files (Optional if providing text)</Label>
@@ -510,7 +684,7 @@ export default function AssignmentsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Submissions Dialog */}
+      {/* ── View Submissions Dialog ── */}
       <Dialog open={!!showSubmissionsFor} onOpenChange={(open) => !open && setShowSubmissionsFor(null)}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -521,6 +695,19 @@ export default function AssignmentsPage() {
               </Button>
             )}
           </DialogHeader>
+
+          {/* Show rubric summary if available */}
+          {showSubmissionsFor?.rubricCriteria?.length > 0 && (
+            <div className="flex flex-wrap gap-2 p-3 rounded-xl bg-primary/5 border border-primary/20 mb-2">
+              <span className="text-xs font-semibold text-primary flex items-center gap-1 w-full"><ListChecks className="w-3.5 h-3.5" /> Rubric</span>
+              {showSubmissionsFor.rubricCriteria.map((c: any) => (
+                <Badge key={c.id} variant="outline" className="text-xs border-primary/30 text-primary">
+                  {c.name}: {c.maxPoints}pts
+                </Badge>
+              ))}
+            </div>
+          )}
+
           <div className="space-y-4">
             {loadingSubmissions ? (
               <div className="py-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
@@ -529,12 +716,12 @@ export default function AssignmentsPage() {
             ) : (
               submissionsData.map((sub: any) => (
                 <Card key={sub.id} className="border-border">
-                  <CardContent className="p-4 flex items-center justify-between gap-4">
-                    <div>
+                  <CardContent className="p-4 flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-foreground">{sub.student?.user?.name || 'Unknown Student'}</h4>
                       <p className="text-sm text-muted-foreground">{sub.student?.user?.email}</p>
                       <div className="flex items-center gap-2 mt-2">
-                        {sub.grade !== null ? (
+                        {sub.grade !== null && sub.grade !== undefined ? (
                           <Badge variant="outline" className="bg-success/10 text-success border-success/20">
                             Graded: {sub.grade}/{showSubmissionsFor.maxScore || 100}
                           </Badge>
@@ -543,21 +730,13 @@ export default function AssignmentsPage() {
                             Needs Grading
                           </Badge>
                         )}
-                        <span className="text-xs text-muted-foreground ml-2">
-                          Submitted on {new Date(sub.submittedAt).toLocaleDateString()}
-                        </span>
+                        <span className="text-xs text-muted-foreground">Submitted on {new Date(sub.submittedAt).toLocaleDateString()}</span>
                       </div>
                       {sub.textContent && (
-                        <div className="mt-3 p-3 bg-muted rounded-md text-sm border border-border">
-                          {sub.textContent}
-                        </div>
+                        <div className="mt-3 p-3 bg-muted rounded-md text-sm border border-border">{sub.textContent}</div>
                       )}
                       {sub.filePath && (
-                        <Button 
-                          variant="link" 
-                          className="px-0 mt-2 h-auto text-primary font-semibold hover:underline"
-                          onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/${sub.filePath}`.replace(/\\/g, '/'), '_blank')}
-                        >
+                        <Button variant="link" className="px-0 mt-2 h-auto text-primary font-semibold hover:underline" onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/${sub.filePath}`.replace(/\\/g, '/'), '_blank')}>
                           View Attachment
                         </Button>
                       )}
@@ -566,13 +745,23 @@ export default function AssignmentsPage() {
                           <MessageSquare className="w-4 h-4" /> {sub.feedback}
                         </p>
                       )}
+                      {/* Rubric score breakdown in submission card */}
+                      {sub.rubricScores?.length > 0 && (
+                        <div className="mt-3 space-y-1.5 p-3 bg-muted/30 rounded-lg border border-border">
+                          <p className="text-xs font-semibold text-muted-foreground mb-2">Score Breakdown</p>
+                          {sub.rubricScores.map((rs: RubricScore) => (
+                            <div key={rs.criterionId} className="flex items-center gap-2 text-xs">
+                              <span className="text-muted-foreground w-28 truncate shrink-0">{rs.criterion?.name}</span>
+                              <Progress value={rs.criterion?.maxPoints ? (rs.points / rs.criterion.maxPoints) * 100 : 0} className="flex-1 h-1.5" />
+                              <span className="font-medium text-foreground w-14 text-right shrink-0">{rs.points}/{rs.criterion?.maxPoints}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <Button size="sm" onClick={() => {
-                        setGradingSubmission(sub);
-                        setGradingPayload({ grade: sub.grade?.toString() || '', feedback: sub.feedback || '' });
-                      }}>
-                        {sub.grade !== null ? 'Update Grade' : 'Grade'}
+                    <div className="shrink-0">
+                      <Button size="sm" onClick={() => openGradeDialog(sub)}>
+                        {sub.grade !== null && sub.grade !== undefined ? 'Update Grade' : 'Grade'}
                       </Button>
                     </div>
                   </CardContent>
@@ -583,48 +772,133 @@ export default function AssignmentsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Grade Dialog */}
+      {/* ── Grade Dialog (with Rubric Sliders) ── */}
       <Dialog open={!!gradingSubmission} onOpenChange={(open) => {
         if (!open) {
           setGradingSubmission(null);
-          // Wait for transition before refreshing to avoid blank state
           setTimeout(() => handleViewSubmissions(showSubmissionsFor), 100);
         }
       }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle className="font-heading">Grade Submission</DialogTitle></DialogHeader>
-          {gradingSubmission && (
-            <form onSubmit={handleSubmitGrade} className="space-y-4 py-2">
-              <p className="text-sm text-muted-foreground">
-                Student: <span className="font-semibold">{gradingSubmission.student?.user?.name}</span>
-              </p>
-              <div className="space-y-2">
-                <Label>Score (out of {showSubmissionsFor?.maxScore || 100})</Label>
-                <Input 
-                  type="number" 
-                  max={showSubmissionsFor?.maxScore || 100} 
-                  required 
-                  value={gradingPayload.grade}
-                  onChange={(e) => setGradingPayload(prev => ({ ...prev, grade: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Feedback (Optional)</Label>
-                <Textarea 
-                  rows={3}
-                  value={gradingPayload.feedback}
-                  onChange={(e) => setGradingPayload(prev => ({ ...prev, feedback: e.target.value }))}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setGradingSubmission(null)}>Cancel</Button>
-                <Button type="submit" disabled={submitting}>
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                  Save Grade
-                </Button>
-              </div>
-            </form>
-          )}
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading">
+              Grade Submission
+              {showSubmissionsFor?.rubricCriteria?.length > 0 && (
+                <Badge variant="outline" className="ml-2 text-xs border-primary/30 text-primary">Rubric</Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {gradingSubmission && (() => {
+            const criteria: any[] = showSubmissionsFor?.rubricCriteria || [];
+            const useRubric = criteria.length > 0;
+            const rubricTotal = gradingPayload.rubricScores.reduce((s, rs) => s + rs.points, 0);
+            const rubricMax = showSubmissionsFor?.maxScore || 100;
+
+            return (
+              <form onSubmit={handleSubmitGrade} className="space-y-5 py-2">
+                <p className="text-sm text-muted-foreground">
+                  Student: <span className="font-semibold text-foreground">{gradingSubmission.student?.user?.name}</span>
+                </p>
+
+                {useRubric ? (
+                  /* ── Per-criterion sliders ── */
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                        <ListChecks className="w-4 h-4 text-primary" /> Rubric Scoring
+                      </p>
+                      <div className="text-right">
+                        <span className={cn(
+                          'text-xl font-bold font-heading',
+                          rubricTotal >= rubricMax * 0.7 ? 'text-success' :
+                          rubricTotal >= rubricMax * 0.5 ? 'text-warning' : 'text-destructive'
+                        )}>
+                          {rubricTotal}
+                        </span>
+                        <span className="text-sm text-muted-foreground">/{rubricMax}</span>
+                      </div>
+                    </div>
+
+                    {/* Overall progress bar */}
+                    <Progress value={(rubricTotal / rubricMax) * 100} className="h-2" />
+
+                    {/* Per-criterion sliders */}
+                    {criteria.map((criterion: any) => {
+                      const scoreEntry = gradingPayload.rubricScores.find(rs => rs.criterionId === criterion.id);
+                      const currentPoints = scoreEntry?.points ?? 0;
+                      const pct = criterion.maxPoints > 0 ? Math.round((currentPoints / criterion.maxPoints) * 100) : 0;
+
+                      return (
+                        <div key={criterion.id} className="space-y-2 p-4 rounded-xl bg-muted/30 border border-border">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm font-medium">{criterion.name}</Label>
+                            <div className="flex items-center gap-2">
+                              <span className={cn(
+                                'text-lg font-bold font-heading',
+                                pct >= 70 ? 'text-success' : pct >= 50 ? 'text-warning' : 'text-destructive'
+                              )}>
+                                {currentPoints}
+                              </span>
+                              <span className="text-sm text-muted-foreground">/ {criterion.maxPoints}</span>
+                            </div>
+                          </div>
+                          <Slider
+                            min={0}
+                            max={criterion.maxPoints}
+                            step={1}
+                            value={[currentPoints]}
+                            onValueChange={([val]) => {
+                              setGradingPayload(prev => ({
+                                ...prev,
+                                rubricScores: prev.rubricScores.map(rs =>
+                                  rs.criterionId === criterion.id ? { ...rs, points: val } : rs
+                                )
+                              }));
+                            }}
+                            className="w-full"
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>0</span>
+                            <span>{Math.round(criterion.maxPoints / 2)}</span>
+                            <span>{criterion.maxPoints}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* ── Flat grade input ── */
+                  <div className="space-y-2">
+                    <Label>Score (out of {showSubmissionsFor?.maxScore || 100})</Label>
+                    <Input
+                      type="number"
+                      max={showSubmissionsFor?.maxScore || 100}
+                      required
+                      value={gradingPayload.grade}
+                      onChange={(e) => setGradingPayload(prev => ({ ...prev, grade: e.target.value }))}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Feedback (Optional)</Label>
+                  <Textarea
+                    rows={3}
+                    value={gradingPayload.feedback}
+                    onChange={(e) => setGradingPayload(prev => ({ ...prev, feedback: e.target.value }))}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setGradingSubmission(null)}>Cancel</Button>
+                  <Button type="submit" disabled={submitting}>
+                    {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                    Save Grade
+                  </Button>
+                </div>
+              </form>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

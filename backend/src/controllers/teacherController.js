@@ -988,7 +988,7 @@ const createAssignment = async (req, res) => {
     const teacher = await prisma.teacher.findUnique({ where: { userId: req.user.id } });
     if (!teacher) return res.status(404).json({ error: 'Teacher not found.' });
 
-    const { courseId, classIds, title, description, deadline, maxScore } = req.body;
+    const { courseId, classIds, title, description, deadline, maxScore, rubric } = req.body;
     
     // Parse classIds if it came as a JSON string (due to multipart form)
     let parsedClassIds = [];
@@ -1000,11 +1000,27 @@ const createAssignment = async (req, res) => {
       }
     }
 
+    // Parse rubric criteria (optional)
+    let parsedRubric = [];
+    if (rubric) {
+      try {
+        parsedRubric = typeof rubric === 'string' ? JSON.parse(rubric) : rubric;
+      } catch (e) {
+        parsedRubric = [];
+      }
+    }
+    parsedRubric = Array.isArray(parsedRubric) ? parsedRubric.filter(r => r.name && r.maxPoints > 0) : [];
+
+    // Derive maxScore from rubric sum if criteria provided, otherwise use explicit maxScore
+    const computedMaxScore = parsedRubric.length > 0
+      ? parsedRubric.reduce((sum, r) => sum + parseInt(r.maxPoints), 0)
+      : (parseInt(maxScore) || 100);
+
     const assignment = await prisma.$transaction(async (tx) => {
       const ass = await tx.assignment.create({
         data: {
           courseId: parseInt(courseId), title, description,
-          deadline: new Date(deadline), maxScore: parseInt(maxScore) || 100,
+          deadline: new Date(deadline), maxScore: computedMaxScore,
           filePath: req.file ? req.file.path : null,
           createdBy: teacher.id,
         },
@@ -1016,6 +1032,18 @@ const createAssignment = async (req, res) => {
             data: { assignmentId: ass.id, classId: parseInt(cid) }
           });
         }
+      }
+
+      // Create rubric criteria
+      for (let i = 0; i < parsedRubric.length; i++) {
+        await tx.rubricCriterion.create({
+          data: {
+            assignmentId: ass.id,
+            name: parsedRubric[i].name,
+            maxPoints: parseInt(parsedRubric[i].maxPoints),
+            orderIndex: i,
+          }
+        });
       }
 
       await tx.auditLog.create({
@@ -1037,22 +1065,13 @@ const createAssignment = async (req, res) => {
   }
 };
 
+
 const updateAssignment = async (req, res) => {
   try {
     const assignmentId = parseInt(req.params.id);
-    const { title, description, deadline, maxScore, classIds } = req.body;
-    
-    const updateData = {
-      title,
-      description,
-      deadline: deadline ? new Date(deadline) : undefined,
-      maxScore: maxScore ? parseInt(maxScore) : undefined,
-    };
+    const { title, description, deadline, maxScore, classIds, rubric } = req.body;
 
-    if (req.file) {
-      updateData.filePath = req.file.path;
-    }
-
+    // Parse classIds
     let parsedClassIds = [];
     if (classIds) {
       try {
@@ -1060,6 +1079,32 @@ const updateAssignment = async (req, res) => {
       } catch (e) {
         parsedClassIds = Array.isArray(classIds) ? classIds : [classIds];
       }
+    }
+
+    // Parse rubric criteria
+    let parsedRubric = [];
+    if (rubric) {
+      try {
+        parsedRubric = typeof rubric === 'string' ? JSON.parse(rubric) : rubric;
+      } catch (e) {
+        parsedRubric = [];
+      }
+    }
+    parsedRubric = Array.isArray(parsedRubric) ? parsedRubric.filter(r => r.name && r.maxPoints > 0) : [];
+
+    const computedMaxScore = parsedRubric.length > 0
+      ? parsedRubric.reduce((sum, r) => sum + parseInt(r.maxPoints), 0)
+      : (maxScore ? parseInt(maxScore) : undefined);
+    
+    const updateData = {
+      title,
+      description,
+      deadline: deadline ? new Date(deadline) : undefined,
+      maxScore: computedMaxScore,
+    };
+
+    if (req.file) {
+      updateData.filePath = req.file.path;
     }
 
     const assignment = await prisma.$transaction(async (tx) => {
@@ -1075,6 +1120,19 @@ const updateAssignment = async (req, res) => {
             data: { assignmentId, classId: parseInt(cid) }
           });
         }
+      }
+
+      // Replace rubric criteria on update
+      await tx.rubricCriterion.deleteMany({ where: { assignmentId } });
+      for (let i = 0; i < parsedRubric.length; i++) {
+        await tx.rubricCriterion.create({
+          data: {
+            assignmentId,
+            name: parsedRubric[i].name,
+            maxPoints: parseInt(parsedRubric[i].maxPoints),
+            orderIndex: i,
+          }
+        });
       }
 
       await tx.auditLog.create({
@@ -1095,35 +1153,65 @@ const updateAssignment = async (req, res) => {
   }
 };
 
+
 const getAssignmentSubmissions = async (req, res) => {
   try {
     const submissions = await prisma.submission.findMany({
       where: { assignmentId: parseInt(req.params.id) },
-      include: { student: { include: { user: { select: { name: true, email: true } } } } },
+      include: {
+        student: { include: { user: { select: { name: true, email: true } } } },
+        rubricScores: { include: { criterion: true }, orderBy: { criterion: { orderIndex: 'asc' } } }
+      },
       orderBy: { submittedAt: 'desc' },
     });
     res.json(submissions);
   } catch (err) {
-    console.error('Get my courses error:', err);
+    console.error('Get assignment submissions error:', err);
     res.status(500).json({ error: 'Server error.' });
   }
 };
 
+
 const gradeSubmission = async (req, res) => {
   try {
-    const { grade, feedback } = req.body;
+    const { grade, feedback, rubricScores } = req.body;
     const submissionId = parseInt(req.params.id);
 
-    // ── ACID transaction: update grade + notify student + audit log ──
+    // Parse rubricScores if provided
+    let parsedRubricScores = [];
+    if (rubricScores) {
+      try {
+        parsedRubricScores = typeof rubricScores === 'string' ? JSON.parse(rubricScores) : rubricScores;
+      } catch (e) {
+        parsedRubricScores = [];
+      }
+    }
+    parsedRubricScores = Array.isArray(parsedRubricScores) ? parsedRubricScores : [];
+
+    // If rubricScores provided, compute grade from sum of points
+    const computedGrade = parsedRubricScores.length > 0
+      ? parsedRubricScores.reduce((sum, s) => sum + parseFloat(s.points || 0), 0)
+      : parseFloat(grade);
+
+    // ── ACID transaction: update grade + upsert rubric scores + notify student + audit log ──
     const submission = await prisma.$transaction(async (tx) => {
       const sub = await tx.submission.update({
         where: { id: submissionId },
-        data: { grade: parseFloat(grade), feedback },
+        data: { grade: computedGrade, feedback },
         include: {
           student: { include: { user: { select: { id: true, name: true } } } },
           assignment: { select: { title: true } }
         }
       });
+
+      // Upsert per-criterion rubric scores
+      for (const rs of parsedRubricScores) {
+        await tx.submissionRubricScore.upsert({
+          where: { submissionId_criterionId: { submissionId, criterionId: parseInt(rs.criterionId) } },
+          update: { points: parseFloat(rs.points || 0) },
+          create: { submissionId, criterionId: parseInt(rs.criterionId), points: parseFloat(rs.points || 0) },
+        });
+      }
 
       // Notify the student about their grade
       if (sub.student?.user?.id) {
@@ -1132,7 +1220,7 @@ const gradeSubmission = async (req, res) => {
             userId: sub.student.user.id,
             type: 'GRADE',
             title: 'Assignment Graded',
-            message: `Your submission for "${sub.assignment?.title || 'an assignment'}" has been graded. Score: ${grade}.`,
+            message: `Your submission for "${sub.assignment?.title || 'an assignment'}" has been graded. Score: ${computedGrade}.`,
             isGlobal: false
           }
         });
@@ -1142,7 +1230,7 @@ const gradeSubmission = async (req, res) => {
         data: {
           userId: req.user.id,
           action: 'SUBMISSION_GRADE',
-          details: `Graded submission ID ${submissionId} (Student: ${sub.student?.user?.name || 'N/A'}, Grade: ${grade})`,
+          details: `Graded submission ID ${submissionId} (Student: ${sub.student?.user?.name || 'N/A'}, Grade: ${computedGrade})`,
           ipAddress: req.ip || req.headers['x-forwarded-for'] || null
         }
       });
@@ -1156,6 +1244,7 @@ const gradeSubmission = async (req, res) => {
     res.status(500).json({ error: 'Server error.' });
   }
 };
+
 
 const deleteAssignment = async (req, res) => {
   try {
@@ -1478,6 +1567,8 @@ const getMyAssignments = async (req, res) => {
       include: {
         course: { include: { courseClasses: { include: { class: true } }, subject: true } },
         _count: { select: { submissions: true } },
+        rubricCriteria: { orderBy: { orderIndex: 'asc' } },
+        assignmentClasses: { select: { classId: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -1487,6 +1578,7 @@ const getMyAssignments = async (req, res) => {
     res.status(500).json({ error: 'Server error.' });
   }
 };
+
 
 // ─── TEACHER ANALYTICS ────────────────────────────────
 const getAnalytics = async (req, res) => {

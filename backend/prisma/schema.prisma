@@ -305,19 +305,20 @@ model QuizRetakeGrant {
 }
 
 model Assignment {
-  id          Int               @id @default(autoincrement())
-  courseId    Int
-  title       String
-  description String?
-  deadline    DateTime
-  maxScore    Int               @default(100)
-  filePath    String?
-  createdBy   Int
-  createdAt   DateTime          @default(now())
-  creator     Teacher           @relation(fields: [createdBy], references: [id], onDelete: Cascade)
-  course      Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  submissions Submission[]
+  id                Int               @id @default(autoincrement())
+  courseId          Int
+  title             String
+  description       String?
+  deadline          DateTime
+  maxScore          Int               @default(100)
+  filePath          String?
+  createdBy         Int
+  createdAt         DateTime          @default(now())
+  creator           Teacher           @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  course            Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  submissions       Submission[]
   assignmentClasses AssignmentClass[]
+  rubricCriteria    RubricCriterion[]
 
   @@map("assignments")
 }
@@ -345,19 +346,44 @@ model QuizClass {
 }
 
 model Submission {
-  id           Int        @id @default(autoincrement())
+  id           Int                    @id @default(autoincrement())
   assignmentId Int
   studentId    Int
   filePath     String?
   textContent  String?
-  submittedAt  DateTime   @default(now())
+  submittedAt  DateTime               @default(now())
   grade        Float?
   feedback     String?
-  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student      Student                @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  assignment   Assignment             @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  rubricScores SubmissionRubricScore[]
 
   @@unique([assignmentId, studentId])
   @@map("submissions")
+}
+
+model RubricCriterion {
+  id           Int                    @id @default(autoincrement())
+  assignmentId Int
+  name         String                 // e.g. "Content", "Grammar"
+  maxPoints    Int                    // e.g. 40
+  orderIndex   Int                    @default(0)
+  assignment   Assignment             @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  scores       SubmissionRubricScore[]
+
+  @@map("rubric_criteria")
+}
+
+model SubmissionRubricScore {
+  id           Int             @id @default(autoincrement())
+  submissionId Int
+  criterionId  Int
+  points       Float           @default(0)
+  submission   Submission      @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  criterion    RubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, criterionId])
+  @@map("submission_rubric_scores")
 }
 
 model Attendance {
