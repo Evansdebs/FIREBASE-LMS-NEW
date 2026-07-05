@@ -997,6 +997,82 @@ const getTimetable = async (req, res) => {
   }
 };
 
+const getQuizLeaderboard = async (req, res) => {
+  try {
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
+    const quizId = parseInt(req.params.id);
+
+    const quiz = await prisma.quiz.findUnique({
+      where: { id: quizId },
+      include: { quizClasses: true }
+    });
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found.' });
+
+    // Verify access if user is student
+    if (student) {
+      const hasAccess = quiz.quizClasses.some(qc => qc.classId === student.classId);
+      if (!hasAccess) return res.status(403).json({ error: 'Access denied.' });
+    }
+
+    // Fetch attempts with non-zero total
+    const attempts = await prisma.quizAttempt.findMany({
+      where: { 
+        quizId,
+        total: { gt: 0 }
+      },
+      select: {
+        id: true,
+        score: true,
+        total: true,
+        submittedAt: true,
+        student: {
+          select: {
+            id: true,
+            user: {
+              select: {
+                name: true,
+                avatar: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Group attempts by student to find their best attempt (highest percentage)
+    const bestAttemptsMap = {};
+    attempts.forEach(att => {
+      const sId = att.student.id;
+      const pct = att.total > 0 ? (att.score / att.total) * 100 : 0;
+      if (!bestAttemptsMap[sId] || pct > (bestAttemptsMap[sId].score / bestAttemptsMap[sId].total) * 100) {
+        bestAttemptsMap[sId] = att;
+      }
+    });
+
+    const leaderboard = Object.values(bestAttemptsMap)
+      .map((att: any) => ({
+        studentId: att.student.id,
+        name: att.student.user.name,
+        avatar: att.student.user.avatar,
+        score: att.score,
+        total: att.total,
+        percentage: att.total > 0 ? (att.score / att.total) * 100 : 0,
+        submittedAt: att.submittedAt
+      }))
+      .sort((a, b) => {
+        if (b.percentage !== a.percentage) {
+          return b.percentage - a.percentage; // High score first
+        }
+        return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime(); // Earlier submission first
+      });
+
+    res.json(leaderboard);
+  } catch (err) {
+    console.error('Quiz leaderboard error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
 module.exports = {
   getDashboard, getMyCourses, getCourseDetails, getMyMaterials,
   updateMaterialProgress,
@@ -1006,4 +1082,5 @@ module.exports = {
   getMyLiveClasses, getAcademicReports,
   addPomodoroPoints,
   getTimetable,
+  getQuizLeaderboard,
 };

@@ -27,6 +27,7 @@ router.post('/materials/:id/progress', studentController.updateMaterialProgress)
 
 // Quiz System
 router.get('/quizzes', cacheMiddleware, studentController.getAvailableQuizzes);
+router.get('/quizzes/:id/leaderboard', studentController.getQuizLeaderboard);
 router.get('/quizzes/:id/start', studentController.startQuiz);
 router.post('/quizzes/:id/submit', studentController.submitQuiz);
 router.post('/quizzes/:id/terminate', studentController.terminateQuiz);

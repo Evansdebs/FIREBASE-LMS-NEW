@@ -233,6 +233,30 @@ export default function QuizzesPage() {
   const [uploading, setUploading] = useState(false);
   const [showUnansweredWarning, setShowUnansweredWarning] = useState(false);
   const [unansweredQuestions, setUnansweredQuestions] = useState<number[]>([]);
+  const [showLeaderboardQuiz, setShowLeaderboardQuiz] = useState<any | null>(null);
+  const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
+
+  const fetchLeaderboard = async (quizId: number) => {
+    try {
+      setLoadingLeaderboard(true);
+      const endpoint = isStudent 
+        ? `/api/student/quizzes/${quizId}/leaderboard`
+        : `/api/teacher/quizzes/${quizId}/leaderboard`;
+      const res = await api.get(endpoint);
+      setLeaderboardData(res);
+    } catch (err: any) {
+      toast.error('Failed to load leaderboard');
+    } finally {
+      setLoadingLeaderboard(false);
+    }
+  };
+
+  const openLeaderboard = (quiz: any) => {
+    setShowLeaderboardQuiz(quiz);
+    setLeaderboardData([]);
+    fetchLeaderboard(quiz.id);
+  };
 
 
   const deleteQuiz = async (id: number) => {
@@ -886,6 +910,15 @@ export default function QuizzesPage() {
                 <span className="text-xs text-muted-foreground">Created: {new Date(quiz.createdAt).toLocaleDateString()}</span>
                 {isStudent && quiz.isPublished && (
                   <div className="flex items-center gap-2">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="gap-2 text-amber-600 border-amber-400/20 hover:bg-amber-500/5 hover:text-amber-700 font-semibold"
+                      onClick={() => openLeaderboard(quiz)}
+                    >
+                      <Trophy className="w-3.5 h-3.5" />
+                      Leaderboard
+                    </Button>
                     {quiz.quizAttempts && quiz.quizAttempts.length > 0 && (
                       <Button 
                         size="sm" 
@@ -918,6 +951,9 @@ export default function QuizzesPage() {
                 )}
                 {canManage && (
                   <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" variant="outline" className="gap-1 bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400 border-amber-200 dark:border-amber-900/50 hover:bg-amber-100 hover:text-amber-800 font-semibold animate-pulse" onClick={() => openLeaderboard(quiz)}>
+                      <Trophy className="w-3 h-3" /> Leaderboard
+                    </Button>
                     <Button size="sm" variant="outline" className="gap-1 bg-primary/5 text-primary hover:bg-primary/20 hover:text-primary border-primary/20 font-semibold" onClick={() => exportQuizToPDF(quiz.id)}>
                       <FileText className="w-3 h-3" /> PDF
                     </Button>
@@ -1104,6 +1140,122 @@ export default function QuizzesPage() {
             >
               {grantLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               Grant Retake
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quiz Leaderboard Dialog */}
+      <Dialog open={!!showLeaderboardQuiz} onOpenChange={(open) => { if (!open) setShowLeaderboardQuiz(null); }}>
+        <DialogContent className="max-w-md border-border bg-card rounded-2xl shadow-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg font-bold flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-amber-500 animate-bounce" />
+              Leaderboard — {showLeaderboardQuiz?.title}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="my-4 space-y-4">
+            {loadingLeaderboard ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-2">
+                <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+                <span className="text-sm text-muted-foreground">Calculating ranks...</span>
+              </div>
+            ) : leaderboardData.length === 0 ? (
+              <div className="text-center py-8 px-4 bg-muted/20 rounded-2xl border border-dashed border-border">
+                <Trophy className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
+                <h4 className="font-bold text-sm text-foreground mb-1">No Leaderboard Data Yet</h4>
+                <p className="text-xs text-muted-foreground max-w-[240px] mx-auto leading-relaxed">
+                  No attempts have been submitted for this quiz yet. Be the first to try and secure 1st place!
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Top 3 Podium Cards */}
+                <div className="grid grid-cols-3 gap-2.5 items-end pt-4 pb-2 border-b border-border">
+                  {/* 2nd Place */}
+                  <div className="flex flex-col items-center text-center">
+                    {leaderboardData[1] ? (
+                      <div className="space-y-1">
+                        <div className="relative">
+                          <div className="w-12 h-12 rounded-full border-2 border-slate-300 bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-500 font-bold text-lg mx-auto shadow-md">
+                            {leaderboardData[1].name.charAt(0)}
+                          </div>
+                          <span className="absolute -top-1.5 -right-1 w-5 h-5 rounded-full bg-slate-300 text-slate-800 text-[10px] font-extrabold flex items-center justify-center border border-white">2</span>
+                        </div>
+                        <p className="text-[11px] font-semibold text-foreground truncate max-w-[80px]">{leaderboardData[1].name}</p>
+                        <p className="text-[10px] font-bold text-slate-500">{Math.round(leaderboardData[1].percentage)}%</p>
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 rounded-full border border-dashed border-border bg-muted/10 flex items-center justify-center text-muted-foreground/20 font-bold text-lg mx-auto">-</div>
+                    )}
+                  </div>
+
+                  {/* 1st Place */}
+                  <div className="flex flex-col items-center text-center -translate-y-2">
+                    <div className="space-y-1">
+                      <div className="relative">
+                        <div className="w-16 h-16 rounded-full border-4 border-amber-400 bg-amber-50 dark:bg-amber-950 flex items-center justify-center text-amber-600 font-bold text-2xl mx-auto shadow-xl ring-4 ring-amber-400/20">
+                          {leaderboardData[0].name.charAt(0)}
+                        </div>
+                        <Trophy className="absolute -top-3.5 left-1/2 -translate-x-1/2 w-6 h-6 text-amber-500 drop-shadow-md" />
+                        <span className="absolute -top-1.5 -right-1 w-5 h-5 rounded-full bg-amber-400 text-amber-900 text-xs font-black flex items-center justify-center border border-white">1</span>
+                      </div>
+                      <p className="text-xs font-bold text-foreground truncate max-w-[90px]">{leaderboardData[0].name}</p>
+                      <p className="text-[11px] font-black text-amber-500">{Math.round(leaderboardData[0].percentage)}%</p>
+                    </div>
+                  </div>
+
+                  {/* 3rd Place */}
+                  <div className="flex flex-col items-center text-center">
+                    {leaderboardData[2] ? (
+                      <div className="space-y-1">
+                        <div className="relative">
+                          <div className="w-12 h-12 rounded-full border-2 border-amber-700 bg-amber-900/10 flex items-center justify-center text-amber-700 font-bold text-lg mx-auto shadow-md">
+                            {leaderboardData[2].name.charAt(0)}
+                          </div>
+                          <span className="absolute -top-1.5 -right-1 w-5 h-5 rounded-full bg-amber-700 text-amber-100 text-[10px] font-extrabold flex items-center justify-center border border-white">3</span>
+                        </div>
+                        <p className="text-[11px] font-semibold text-foreground truncate max-w-[80px]">{leaderboardData[2].name}</p>
+                        <p className="text-[10px] font-bold text-amber-700">{Math.round(leaderboardData[2].percentage)}%</p>
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 rounded-full border border-dashed border-border bg-muted/10 flex items-center justify-center text-muted-foreground/20 font-bold text-lg mx-auto">-</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Remaining rankings */}
+                <div className="space-y-2 max-h-[35vh] overflow-y-auto pr-1">
+                  {leaderboardData.map((student: any, index: number) => {
+                    if (index < 3) return null; // Skip top 3
+                    return (
+                      <div key={student.studentId} className="flex items-center justify-between p-2.5 rounded-xl bg-muted/30 border border-border">
+                        <div className="flex items-center gap-3">
+                          <span className="w-5 text-xs font-bold text-muted-foreground text-center">{index + 1}</span>
+                          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center">
+                            {student.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-foreground">{student.name}</p>
+                            <p className="text-[10px] text-muted-foreground">Submitted {new Date(student.submittedAt).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-foreground">{Math.round(student.percentage)}%</span>
+                          <p className="text-[10px] text-muted-foreground">{student.score}/{student.total} pts</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setShowLeaderboardQuiz(null)} className="w-full font-bold">
+              Close Leaderboard
             </Button>
           </DialogFooter>
         </DialogContent>

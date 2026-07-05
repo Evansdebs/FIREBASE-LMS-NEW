@@ -44,6 +44,7 @@ router.post('/quizzes', teacherController.createQuiz);
 router.put('/quizzes/:id', teacherController.updateQuiz);
 router.delete('/quizzes/:id', teacherController.deleteQuiz);
 router.get('/quizzes/:id', teacherController.getQuizById);
+router.get('/quizzes/:id/leaderboard', teacherController.getQuizLeaderboard);
 router.get('/quizzes/:id/results', teacherController.getQuizResults);
 
 // Quiz Export
