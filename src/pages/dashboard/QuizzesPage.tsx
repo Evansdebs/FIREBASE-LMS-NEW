@@ -231,6 +231,8 @@ export default function QuizzesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loadingQuiz, setLoadingQuiz] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showUnansweredWarning, setShowUnansweredWarning] = useState(false);
+  const [unansweredQuestions, setUnansweredQuestions] = useState<number[]>([]);
 
 
   const deleteQuiz = async (id: number) => {
@@ -455,8 +457,25 @@ export default function QuizzesPage() {
     } : null);
   };
 
-  const handleSubmitQuiz = useCallback(async () => {
+  const handleSubmitQuiz = useCallback(async (force = false) => {
     if (!activeAttempt || !activeQuiz || submitting) return;
+
+    // Check for unanswered questions unless forcing submission
+    if (!force) {
+      const questions = activeQuiz.quizQuestions || [];
+      const unanswered = questions
+        .map((q: any, idx: number) => ({ idx: idx + 1, id: q.id }))
+        .filter(({ id }: { id: number }) => !activeAttempt.answers[id])
+        .map(({ idx }: { idx: number }) => idx);
+
+      if (unanswered.length > 0) {
+        setUnansweredQuestions(unanswered);
+        setShowUnansweredWarning(true);
+        return;
+      }
+    }
+
+    setShowUnansweredWarning(false);
     try {
       setSubmitting(true);
       const res = await api.post(`/api/student/quizzes/${activeQuiz.id}/submit`, {
@@ -628,12 +647,17 @@ export default function QuizzesPage() {
           {questions.map((question: any, qi: number) => {
             const selectedOptionId = activeAttempt.answers[question.id];
             const correctOption = question.options?.find((o: any) => o.isCorrect);
+            const isUnansweredHighlight = showUnansweredWarning && unansweredQuestions.includes(qi + 1);
 
             return (
-              <Card key={question.id} className={cn('border-border',
-                showResults && selectedOptionId === correctOption?.id ? 'ring-1 ring-success/30' :
-                showResults && selectedOptionId ? 'ring-1 ring-destructive/30' : ''
-              )}>
+              <Card
+                id={`question-${qi + 1}`}
+                key={question.id}
+                className={cn('border-border transition-all',
+                  showResults && selectedOptionId === correctOption?.id ? 'ring-1 ring-success/30' :
+                  showResults && selectedOptionId ? 'ring-1 ring-destructive/30' :
+                  isUnansweredHighlight ? 'ring-2 ring-warning/60 bg-warning/5' : ''
+                )}>
                 <CardContent className="p-5">
                   <div className="flex items-start gap-3">
                     <span className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm shrink-0">
@@ -703,6 +727,65 @@ export default function QuizzesPage() {
           })}
         </div>
 
+        {/* Unanswered Questions Warning */}
+        {showUnansweredWarning && (
+          <Card className="border-2 border-warning/50 bg-warning/5">
+            <CardContent className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-full bg-warning/15 flex items-center justify-center shrink-0 mt-0.5">
+                  <AlertTriangle className="w-5 h-5 text-warning" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-heading font-semibold text-card-foreground text-base">
+                    {unansweredQuestions.length} Question{unansweredQuestions.length > 1 ? 's' : ''} Left Unanswered
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Please answer all questions before submitting. The following question{unansweredQuestions.length > 1 ? 's are' : ' is'} still unanswered:
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {unansweredQuestions.map(qNum => (
+                      <Badge
+                        key={qNum}
+                        variant="outline"
+                        className="border-warning/50 bg-warning/10 text-warning font-semibold cursor-pointer hover:bg-warning/20 transition-colors"
+                        onClick={() => {
+                          const el = document.getElementById(`question-${qNum}`);
+                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
+                      >
+                        Q{qNum}
+                      </Badge>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Click a question number above to jump to it, or submit anyway with unanswered questions (they will be marked incorrect).
+                  </p>
+                  <div className="flex items-center gap-3 mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowUnansweredWarning(false)}
+                      className="gap-2"
+                    >
+                      <X className="w-4 h-4" /> Go Back & Answer
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleSubmitQuiz(true)}
+                      disabled={submitting}
+                      className="gap-2"
+                    >
+                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                      Submit Anyway
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="flex justify-between">
           <Button variant="outline" onClick={() => { 
              if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
@@ -718,7 +801,7 @@ export default function QuizzesPage() {
             {activeAttempt.submitted ? 'Back to Quizzes' : 'Abandon Quiz'}
           </Button>
           {!activeAttempt.submitted && (
-            <Button onClick={handleSubmitQuiz} className="gap-2" disabled={submitting}>
+            <Button onClick={() => handleSubmitQuiz()} className="gap-2" disabled={submitting}>
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Submit Quiz
             </Button>
           )}
