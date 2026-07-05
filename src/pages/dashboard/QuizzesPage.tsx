@@ -454,12 +454,14 @@ export default function QuizzesPage() {
         }
       });
 
+      const pct = res.total > 0 ? (res.score / res.total) * 100 : 0;
+
       setActiveQuiz(res.quiz);
       setActiveAttempt({
         id: res.id,
         quizId: res.quizId,
         answers: answersMap,
-        score: res.score,
+        score: pct,
         total: res.total,
         submitted: true,
         startedAt: res.submittedAt,
@@ -506,14 +508,15 @@ export default function QuizzesPage() {
         answers: activeAttempt.answers,
         attemptId: activeAttempt.id
       });
-      setActiveAttempt((prev: any) => ({ ...prev, submitted: true, score: res.percentage }));
-      setShowResults(true);
+      
       toast.success('Quiz submitted successfully!');
       fetchQuizzes();
       
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
       }
+
+      await reviewQuiz(activeAttempt.id);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -530,14 +533,13 @@ export default function QuizzesPage() {
         attemptId: activeAttempt.id
       });
       toast.error('EXAM TERMINATED: You switched tabs, left the screen, or exited fullscreen. The quiz was stopped. You have been granted exactly 1 retake attempt to restart.');
-      
-      setActiveAttempt((prev: any) => ({ ...prev, submitted: true, score: res.percentage }));
-      setShowResults(true);
       fetchQuizzes();
       
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
       }
+
+      await reviewQuiz(activeAttempt.id);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
