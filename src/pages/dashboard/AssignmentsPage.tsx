@@ -295,7 +295,8 @@ export default function AssignmentsPage() {
 
   const handleTogglePublish = async (assignment: any) => {
     try {
-      const res = await api.patch(`/api/teacher/assignments/${assignment.id}/publish`, {});
+      const prefix = isAdmin ? '/api/admin' : '/api/teacher';
+      const res = await api.patch(`${prefix}/assignments/${assignment.id}/publish`, {});
       const action = res.isPublished ? 'Published' : 'Unpublished';
       toast.success(`${action} "${assignment.title}" successfully`);
       fetchAssignments();
@@ -558,121 +559,128 @@ export default function AssignmentsPage() {
           return (
             <Card key={a.id} className="border-border hover:shadow-md transition-shadow">
               <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 flex-1">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <FileText className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-heading font-semibold text-card-foreground">{a.title}</h3>
-                        {statusBadge(status)}
-                        {canManage && (
-                          a.isPublished ? (
-                            <Badge variant="outline" className="border-emerald-500/30 text-emerald-500 bg-emerald-500/5 text-xs gap-1">
-                              <Globe className="w-3 h-3" /> Published
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="border-amber-500/30 text-amber-500 bg-amber-500/5 text-xs gap-1">
-                              <EyeOff className="w-3 h-3" /> Draft
-                            </Badge>
-                          )
-                        )}
-                        {hasRubricCriteria && (
-                          <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 text-xs gap-1">
-                            <ListChecks className="w-3 h-3" /> Rubric
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                    <FileText className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {/* Title + badges row */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-heading font-semibold text-card-foreground">{a.title}</h3>
+                      {statusBadge(status)}
+                      {canManage && (
+                        a.isPublished ? (
+                          <Badge variant="outline" className="border-emerald-500/30 text-emerald-500 bg-emerald-500/5 text-xs gap-1">
+                            <Globe className="w-3 h-3" /> Published
                           </Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">{a.course?.title || 'Subject'}</p>
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{a.description}</p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Due: {new Date(a.dueDate).toLocaleDateString()}</span>
-                        {sub?.submittedAt && <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-success" /> Submitted: {new Date(sub.submittedAt).toLocaleDateString()}</span>}
-                        {canManage && <span className="flex items-center gap-1"><Upload className="w-3 h-3" /> {a._count?.submissions || 0} submitted</span>}
-                      </div>
-                      {a.filePath && (
-                        <div className="mt-2">
-                          <a href={`${import.meta.env.VITE_API_URL || ''}/${a.filePath}`.replace(/\\/g, '/')} target="_blank" rel="noopener noreferrer" className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 font-semibold">
-                            <FileText className="w-3 h-3" /> View Attachment
-                          </a>
-                        </div>
+                        ) : (
+                          <Badge variant="outline" className="border-amber-500/30 text-amber-500 bg-amber-500/5 text-xs gap-1">
+                            <EyeOff className="w-3 h-3" /> Draft
+                          </Badge>
+                        )
                       )}
+                      {hasRubricCriteria && (
+                        <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 text-xs gap-1">
+                          <ListChecks className="w-3 h-3" /> Rubric
+                        </Badge>
+                      )}
+                    </div>
 
-                      {/* Student grade display — rubric breakdown or flat */}
-                      {isStudent && sub?.grade != null && (
-                        <div className="mt-3 p-3 bg-success/5 rounded-xl border border-success/20">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-semibold text-success">{sub.grade}/{a.maxScore || 100}</span>
-                            {sub.feedback && (
-                              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                <MessageSquare className="w-3 h-3" /> {sub.feedback}
-                              </span>
-                            )}
-                          </div>
-                          {/* Per-criterion breakdown */}
-                          {sub.rubricScores?.length > 0 && (
-                            <div className="space-y-1.5 mt-2 pt-2 border-t border-success/15">
-                              {sub.rubricScores.map((rs: RubricScore) => (
-                                <div key={rs.criterionId} className="flex items-center gap-2 text-xs">
-                                  <span className="text-muted-foreground flex-1 truncate">{rs.criterion?.name}</span>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <Progress value={rs.criterion?.maxPoints ? (rs.points / rs.criterion.maxPoints) * 100 : 0} className="w-20 h-1.5" />
-                                    <span className="font-medium text-foreground w-12 text-right">{rs.points}/{rs.criterion?.maxPoints}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                    {/* Course & description */}
+                    <p className="text-xs text-muted-foreground mt-1">{a.course?.title || 'Subject'}</p>
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{a.description}</p>
+
+                    {/* Due date row */}
+                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
+                      <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Due: {new Date(a.deadline || a.dueDate).toLocaleDateString()}</span>
+                      {sub?.submittedAt && <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-success" /> Submitted: {new Date(sub.submittedAt).toLocaleDateString()}</span>}
+                      {canManage && <span className="flex items-center gap-1"><Upload className="w-3 h-3" /> {a._count?.submissions || 0} submitted</span>}
+                    </div>
+
+                    {/* Attachment link */}
+                    {a.filePath && (
+                      <div className="mt-2">
+                        <a href={`${import.meta.env.VITE_API_URL || ''}/${a.filePath}`.replace(/\\/g, '/')} target="_blank" rel="noopener noreferrer" className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 font-semibold">
+                          <FileText className="w-3 h-3" /> View Attachment
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Student grade display — rubric breakdown or flat */}
+                    {isStudent && sub?.grade != null && (
+                      <div className="mt-3 p-3 bg-success/5 rounded-xl border border-success/20">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-semibold text-success">{sub.grade}/{a.maxScore || 100}</span>
+                          {sub.feedback && (
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <MessageSquare className="w-3 h-3" /> {sub.feedback}
+                            </span>
                           )}
                         </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="shrink-0">
-                    {isStudent && (status === 'pending' || status === 'overdue' || status === 'submitted') && (
-                      <Button
-                        size="sm"
-                        variant={status === 'submitted' ? "outline" : (status === 'overdue' ? "destructive" : "default")}
-                        onClick={() => handleOpenSubmit(a)}
-                        disabled={status === 'overdue'}
-                        className={cn(status === 'overdue' && "opacity-50 cursor-not-allowed")}
-                      >
-                        {status === 'submitted' ? 'Edit Submission' : (status === 'overdue' ? 'Closed' : 'Submit')}
-                      </Button>
+                        {sub.rubricScores?.length > 0 && (
+                          <div className="space-y-1.5 mt-2 pt-2 border-t border-success/15">
+                            {sub.rubricScores.map((rs: RubricScore) => (
+                              <div key={rs.criterionId} className="flex items-center gap-2 text-xs">
+                                <span className="text-muted-foreground flex-1 truncate">{rs.criterion?.name}</span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <Progress value={rs.criterion?.maxPoints ? (rs.points / rs.criterion.maxPoints) * 100 : 0} className="w-20 h-1.5" />
+                                  <span className="font-medium text-foreground w-12 text-right">{rs.points}/{rs.criterion?.maxPoints}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
-                    {canManage && (
-                      <div className="flex gap-2 items-center flex-wrap justify-end">
+
+                    {/* ── Action buttons row (below content, mobile-friendly) ── */}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {isStudent && (status === 'pending' || status === 'overdue' || status === 'submitted') && (
                         <Button
                           size="sm"
-                          variant={a.isPublished ? 'outline' : 'default'}
-                          className={cn(
-                            'gap-1.5',
-                            a.isPublished
-                              ? 'border-amber-500/40 text-amber-500 hover:bg-amber-500/10'
-                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                          )}
-                          onClick={() => handleTogglePublish(a)}
+                          variant={status === 'submitted' ? "outline" : (status === 'overdue' ? "destructive" : "default")}
+                          onClick={() => handleOpenSubmit(a)}
+                          disabled={status === 'overdue'}
+                          className={cn(status === 'overdue' && "opacity-50 cursor-not-allowed")}
                         >
-                          {a.isPublished ? (
-                            <><EyeOff className="w-3.5 h-3.5" /> Unpublish</>
-                          ) : (
-                            <><Globe className="w-3.5 h-3.5" /> Publish</>
-                          )}
+                          {status === 'submitted' ? 'Edit Submission' : (status === 'overdue' ? 'Closed' : 'Submit')}
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleViewSubmissions(a)}>View Submissions</Button>
-                        <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-primary hover:bg-primary/20 font-semibold" onClick={() => handleEditAssignment(a)}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/20 font-semibold" onClick={() => handleDeleteAssignment(a.id)}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    )}
+                      )}
+                      {canManage && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant={a.isPublished ? 'outline' : 'default'}
+                            className={cn(
+                              'gap-1.5',
+                              a.isPublished
+                                ? 'border-amber-500/40 text-amber-500 hover:bg-amber-500/10'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            )}
+                            onClick={() => handleTogglePublish(a)}
+                          >
+                            {a.isPublished ? (
+                              <><EyeOff className="w-3.5 h-3.5" /> Unpublish</>
+                            ) : (
+                              <><Globe className="w-3.5 h-3.5" /> Publish</>
+                            )}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleViewSubmissions(a)}>View Submissions</Button>
+                          <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-primary hover:bg-primary/20" onClick={() => handleEditAssignment(a)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/20" onClick={() => handleDeleteAssignment(a.id)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
           );
+
         })}
         {filtered.length === 0 && (
           <Card className="border-border"><CardContent className="p-8 text-center text-muted-foreground">No assignments found</CardContent></Card>

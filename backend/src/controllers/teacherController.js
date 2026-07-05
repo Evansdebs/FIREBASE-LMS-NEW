@@ -2308,10 +2308,17 @@ const getQuizLeaderboard = async (req, res) => {
 // ─── PUBLISH / UNPUBLISH ASSIGNMENT ─────────────────────────────────────
 const publishAssignment = async (req, res) => {
   try {
-    const teacher = await prisma.teacher.findUnique({ where: { userId: req.user.id } });
-    if (!teacher) return res.status(404).json({ error: 'Teacher not found.' });
-
+    const isAdmin = req.user.role === 'super_admin';
     const assignmentId = parseInt(req.params.id);
+
+    // Teacher ownership check (skip for admin)
+    if (!isAdmin) {
+      const teacher = await prisma.teacher.findUnique({ where: { userId: req.user.id } });
+      if (!teacher) return res.status(404).json({ error: 'Teacher not found.' });
+
+      const own = await prisma.assignment.findFirst({ where: { id: assignmentId, createdBy: teacher.id } });
+      if (!own) return res.status(403).json({ error: 'Not your assignment.' });
+    }
 
     const existing = await prisma.assignment.findUnique({
       where: { id: assignmentId },
@@ -2320,7 +2327,6 @@ const publishAssignment = async (req, res) => {
       },
     });
     if (!existing) return res.status(404).json({ error: 'Assignment not found.' });
-    if (existing.createdBy !== teacher.id) return res.status(403).json({ error: 'Not your assignment.' });
 
     const newStatus = !existing.isPublished;
 
@@ -2373,6 +2379,7 @@ const publishAssignment = async (req, res) => {
     console.error('Publish assignment error:', err);
     res.status(500).json({ error: 'Server error.' });
   }
+
 };
 
 module.exports = {

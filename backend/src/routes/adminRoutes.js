@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const teacherController = require('../controllers/teacherController');
 const { protect, admin, authorize } = require('../middleware/authMiddleware');
 const maintenanceMiddleware = require('../middleware/maintenanceMiddleware');
 const upload = require('../middleware/uploadMiddleware');
@@ -73,6 +74,8 @@ router.delete('/quizzes/:id', authorize('approve_content'), adminController.dele
 
 // Assignments (Admin view)
 router.get('/assignments', authorize('approve_content'), cacheMiddleware, adminController.getAssignments);
+router.patch('/assignments/:id/publish', authorize('approve_content'), teacherController.publishAssignment);
+
 
 // Notifications / Announcements
 router.get('/notifications', authorize('send_announcements'), adminController.getNotifications);
