@@ -54,3 +54,8 @@ test-results/
 lint_errors.txt
 frontend_log.txt
 
+# ─── Migration secrets & backup files ───────────────────
+backend/.env.migration
+backend/env.migration
+migration_backups/
+
