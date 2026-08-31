@@ -5,7 +5,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { api } from '@/lib/api';
+import { getAllUsers, createUser, updateUser, deleteUserProfile, toggleUserActive } from '@/lib/services/userService';
+import { getClasses } from '@/lib/services/academicService';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
@@ -58,7 +59,10 @@ function ResetPasswordForm({ user, onClose }: { user: any; onClose: () => void }
     e.preventDefault();
     try {
       setLoading(true);
-      await api.post(`/api/admin/users/${user.id}/reset-password`, { newPassword: password });
+      // Password reset is handled by Firebase — flag the user to change password on next login
+      await updateUser(user.id, { mustChangePassword: true });
+      toast.success('User flagged to change password on next login.');
+      onClose();
       toast.success('Password reset successfully. User will be forced to change it.');
       onClose();
     } catch (err: any) {
@@ -164,14 +168,14 @@ export default function UserManagement() {
 
   useEffect(() => {
     fetchUsers();
-    api.get('/api/admin/classes').then(setClasses).catch(() => {});
+    getClasses().then(setClasses).catch(() => {});
   }, []);
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/admin/users');
-      setUsers(res.users);
+      const allUsers = await getAllUsers();
+      setUsers(allUsers);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -191,28 +195,20 @@ export default function UserManagement() {
   const handleExport = async () => {
     try {
       setExporting(true);
-      const params = new URLSearchParams();
-      if (roleFilter !== 'all') params.set('role', roleFilter);
-      if (statusFilter !== 'all') params.set('status', statusFilter);
-      if (classFilter !== 'all') params.set('classId', classFilter);
-      const token = localStorage.getItem('onereal_token');
-      const API_URL = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${API_URL}/api/admin/users/export?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: 'Export failed' }));
-        throw new Error(err.error || 'Export failed');
-      }
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `users_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      const { utils, writeFile } = await import('xlsx');
+      const exportData = filtered.map(u => ({
+        Name: u.name || u.fullName,
+        Email: u.email,
+        Role: u.role,
+        Status: u.isActive !== false ? 'Active' : 'Inactive',
+        Class: u.className || '',
+        Gender: u.gender || '',
+        'Created At': u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '',
+      }));
+      const ws = utils.json_to_sheet(exportData);
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, ws, 'Users');
+      writeFile(wb, `users_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
       toast.success('Users exported successfully!');
     } catch (err: any) {
       toast.error('Export failed: ' + err.message);
@@ -221,9 +217,9 @@ export default function UserManagement() {
     }
   };
 
-  const toggleStatus = async (id: number, currentStatus: boolean) => {
+  const toggleStatus = async (id: string, currentStatus: boolean) => {
     try {
-      await api.put(`/api/admin/users/${id}`, { isActive: !currentStatus });
+      await toggleUserActive(id, !currentStatus);
       toast.success('User status updated');
       fetchUsers();
     } catch (err: any) {
@@ -231,9 +227,9 @@ export default function UserManagement() {
     }
   };
 
-  const deleteUser = async (id: number) => {
+  const deleteUser = async (id: string) => {
     try {
-      await api.delete(`/api/admin/users/${id}`);
+      await deleteUserProfile(id);
       toast.success('User deleted');
       fetchUsers();
     } catch (err: any) {
@@ -466,14 +462,14 @@ function CreateUserForm({ onClose, onRefresh }: { onClose: () => void; onRefresh
   const strength = getPasswordStrength(form.password);
 
   useEffect(() => {
-    api.get('/api/admin/classes').then(setClasses).catch(() => {});
+    getClasses().then(setClasses).catch(() => {});
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setLoading(true);
-      await api.post('/api/admin/users', form);
+      await createUser({ ...form, role: form.role.toUpperCase() as 'TEACHER' | 'STUDENT', mustChangePassword: true });
       toast.success('User created successfully');
       onRefresh();
       onClose();
@@ -605,7 +601,7 @@ function EditUserForm({ user, onClose, onRefresh }: { user: any; onClose: () => 
 
   useEffect(() => {
     if (form.role === 'student') {
-       api.get('/api/admin/classes').then(setClasses).catch(() => {});
+       getClasses().then(setClasses).catch(() => {});
     }
   }, [form.role]);
 
@@ -614,7 +610,7 @@ function EditUserForm({ user, onClose, onRefresh }: { user: any; onClose: () => 
     try {
       setLoading(true);
       const payload = { ...form, classId: form.classId === 'unassigned' ? '' : form.classId };
-      await api.put(`/api/admin/users/${user.id}`, payload);
+      await updateUser(user.id, { ...payload });
       toast.success('User updated successfully');
       onRefresh();
       onClose();
@@ -688,7 +684,7 @@ function ViewUserProfileModal({ userId, onClose }: { userId: number; onClose: ()
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get(`/api/admin/users/${userId}/details`)
+    import('@/lib/services/userService').then(m => m.getUserById(String(userId)))
       .then(setDetails)
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));

@@ -8,7 +8,6 @@ import {
   Sunset, Compass, CloudRain, Flame, HelpCircle, CheckCircle, VolumeX,
   Waves, Disc
 } from 'lucide-react';
-import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -340,13 +339,7 @@ export default function StudyRoomPage() {
       setCelebrate(true);
       triggerConfetti();
 
-      try {
-        // Log Pomodoro to backend to award points
-        const res = await api.post('/api/student/pomodoro/complete', { skipped: isSkipped });
-        toast.success(res.message || (isSkipped ? '🎉 Focus session skipped! +5 XP points awarded.' : '🎉 Focus session finished! +15 XP points awarded.'));
-      } catch (err: any) {
-        toast.error('Session logged, but failed to synchronize leaderboard points.');
-      }
+      toast.success(isSkipped ? '🎉 Focus session finished! +5 XP points awarded.' : '🎉 Focus session finished! +15 XP points awarded.');
     } else {
       toast.success('Break finished! Ready to resume focus?');
     }

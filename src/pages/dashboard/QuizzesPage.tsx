@@ -11,7 +11,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
-import { api } from '@/lib/api';
+import {
+  getQuizzes, getQuizById, createQuiz,
+  updateQuiz, deleteQuiz, getQuizQuestions,
+  createQuizQuestion, updateQuizQuestion, deleteQuizQuestion,
+  getQuizAttempts, createQuizAttempt, QuizDoc, QuizQuestion, QuizAttempt
+} from '@/lib/services/quizService';
+import { getCourses, getClasses } from '@/lib/services/academicService';
 import {
   Plus, Search, Clock, CheckCircle, XCircle, PlayCircle, Trophy,
   AlertTriangle, Trash2, Edit, Loader2, Download, Upload, FileSpreadsheet, FileText, Calendar, Timer, ClipboardList, RefreshCw, UserCheck, Users, X
@@ -237,14 +243,22 @@ export default function QuizzesPage() {
   const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
 
-  const fetchLeaderboard = async (quizId: number) => {
+  const fetchLeaderboard = async (quizId: string) => {
     try {
       setLoadingLeaderboard(true);
-      const endpoint = isStudent
-        ? `/api/student/quizzes/${quizId}/leaderboard`
-        : `/api/teacher/quizzes/${quizId}/leaderboard`;
-      const res = await api.get(endpoint);
-      setLeaderboardData(res);
+      const attempts = await getQuizAttempts(quizId);
+      const ranked = attempts
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10)
+        .map((a, i) => ({
+          rank: i + 1,
+          studentName: a.studentName || 'Student',
+          score: a.score,
+          total: a.total,
+          percentage: Math.round((a.score / Math.max(a.total, 1)) * 100),
+          submittedAt: a.submittedAt,
+        }));
+      setLeaderboardData(ranked);
     } catch (err: any) {
       toast.error('Failed to load leaderboard');
     } finally {
@@ -259,11 +273,10 @@ export default function QuizzesPage() {
   };
 
 
-  const deleteQuiz = async (id: number) => {
+  const handleDeleteQuiz = async (id: string) => {
     if (!confirm('Delete this quiz? All results will be lost.')) return;
     try {
-      const endpoint = isAdmin ? `/api/admin/quizzes/${id}` : `/api/teacher/quizzes/${id}`;
-      await api.delete(endpoint);
+      await deleteQuiz(id);
       toast.success('Quiz deleted');
       fetchQuizzes();
     } catch (err: any) {
@@ -274,9 +287,9 @@ export default function QuizzesPage() {
   const handleEditClick = async (quiz: any) => {
     try {
       setLoadingQuiz(true);
-      const endpoint = isAdmin ? `/api/admin/quizzes/${quiz.id}` : `/api/teacher/quizzes/${quiz.id}`;
-      const fullQuiz = await api.get(endpoint);
-      setQuizToEdit(fullQuiz);
+      const fullQuiz = await getQuizById(quiz.id);
+      const questions = await getQuizQuestions(quiz.id);
+      setQuizToEdit({ ...fullQuiz, quizQuestions: questions });
       setShowEdit(true);
     } catch (err: any) {
       toast.error('Failed to load quiz details');
@@ -290,11 +303,8 @@ export default function QuizzesPage() {
   const fetchQuizzes = async () => {
     try {
       setLoading(true);
-      let endpoint = isStudent ? '/api/student/quizzes' :
-        isTeacher ? '/api/teacher/quizzes' :
-          '/api/admin/quizzes';
-      const res = await api.get(endpoint);
-      setQuizzes(Array.isArray(res) ? res : res.quizzes || []);
+      const res = await getQuizzes();
+      setQuizzes(res || []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -418,11 +428,12 @@ export default function QuizzesPage() {
 
   const startQuiz = async (quiz: any) => {
     try {
-      const res = await api.get(`/api/student/quizzes/${quiz.id}/start`);
-      const quizData = res.quiz;
+      setLoadingQuiz(true);
+      const questions = await getQuizQuestions(quiz.id);
+      const quizData = { ...quiz, quizQuestions: questions };
       setActiveQuiz(quizData);
       setActiveAttempt({
-        id: res.attemptId,
+        id: `attempt_${Date.now()}`,
         quizId: quiz.id,
         answers: {},
         score: null,
@@ -430,7 +441,7 @@ export default function QuizzesPage() {
         startedAt: Date.now(),
         strikes: 0,
       });
-      setTimeLeft(quizData.duration * 60);
+      setTimeLeft((quizData.duration || 30) * 60);
       setShowResults(false);
 
       // Request Fullscreen
@@ -439,35 +450,19 @@ export default function QuizzesPage() {
       });
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setLoadingQuiz(false);
     }
   };
 
-  const reviewQuiz = async (attemptId: number) => {
+  const reviewQuiz = async (attemptId: string) => {
     try {
       setLoadingQuiz(true);
-      const res = await api.get(`/api/student/quizzes/attempts/${attemptId}`);
-
-      const answersMap: Record<number, number> = {};
-      (res.answers || []).forEach((ans: any) => {
-        if (ans.selectedOptionId) {
-          answersMap[ans.questionId] = ans.selectedOptionId;
-        }
-      });
-
-      const pct = res.total > 0 ? (res.score / res.total) * 100 : 0;
-
-      setActiveQuiz(res.quiz);
-      setActiveAttempt({
-        id: res.id,
-        quizId: res.quizId,
-        answers: answersMap,
-        score: pct,
-        total: res.total,
-        submitted: true,
-        startedAt: res.submittedAt,
-        strikes: res.strikes,
-      });
-      setShowResults(true);
+      const attempts = await getQuizAttempts(activeQuiz?.id, user?.id as string);
+      const attempt = attempts.find(a => a.id === attemptId) || attempts[0];
+      if (attempt && activeQuiz) {
+        setShowResults(true);
+      }
     } catch (err: any) {
       toast.error(err.message || 'Failed to load quiz review');
     } finally {
@@ -475,7 +470,7 @@ export default function QuizzesPage() {
     }
   };
 
-  const selectAnswer = (questionId: number, optionId: number) => {
+  const selectAnswer = (questionId: string, optionId: string) => {
     if (!activeAttempt || activeAttempt.submitted) return;
     setActiveAttempt((prev: any) => prev ? {
       ...prev,
@@ -484,14 +479,14 @@ export default function QuizzesPage() {
   };
 
   const handleSubmitQuiz = useCallback(async (force = false) => {
-    if (!activeAttempt || !activeQuiz || submitting) return;
+    if (!activeAttempt || !activeQuiz || submitting || !user) return;
 
     // Check for unanswered questions unless forcing submission
     if (!force) {
       const questions = activeQuiz.quizQuestions || [];
       const unanswered = questions
         .map((q: any, idx: number) => ({ idx: idx + 1, id: q.id }))
-        .filter(({ id }: { id: number }) => !activeAttempt.answers[id])
+        .filter(({ id }: { id: string }) => !activeAttempt.answers[id])
         .map(({ idx }: { idx: number }) => idx);
 
       if (unanswered.length > 0) {
@@ -504,10 +499,42 @@ export default function QuizzesPage() {
     setShowUnansweredWarning(false);
     try {
       setSubmitting(true);
-      const res = await api.post(`/api/student/quizzes/${activeQuiz.id}/submit`, {
-        answers: activeAttempt.answers,
-        attemptId: activeAttempt.id
+      const questions = activeQuiz.quizQuestions || [];
+      let totalScore = 0;
+      let maxScore = 0;
+      const formattedAnswers: any[] = [];
+
+      questions.forEach((q: any) => {
+        const points = q.points || 1;
+        maxScore += points;
+        const selectedId = activeAttempt.answers[q.id];
+        const correctOpt = (q.options || []).find((o: any) => o.isCorrect);
+        const isCorrect = correctOpt && String(correctOpt.id || correctOpt.label) === String(selectedId);
+        if (isCorrect) totalScore += points;
+        formattedAnswers.push({
+          questionId: q.id,
+          selectedOptionId: selectedId,
+          isCorrect: !!isCorrect,
+        });
       });
+
+      const attempt = await createQuizAttempt({
+        quizId: activeQuiz.id,
+        quizTitle: activeQuiz.title,
+        studentId: user.id as string,
+        studentName: user.fullName || user.name,
+        score: totalScore,
+        total: maxScore || 1,
+        percentage: Math.round((totalScore / Math.max(maxScore, 1)) * 100),
+        answers: formattedAnswers,
+      });
+
+      setActiveAttempt((prev: any) => ({
+        ...prev,
+        score: Math.round((totalScore / Math.max(maxScore, 1)) * 100),
+        total: maxScore,
+        submitted: true,
+      }));
 
       toast.success('Quiz submitted successfully!');
       fetchQuizzes();
@@ -515,31 +542,25 @@ export default function QuizzesPage() {
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => { });
       }
-
-      await reviewQuiz(activeAttempt.id);
+      setShowResults(true);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setSubmitting(false);
     }
-  }, [activeAttempt, activeQuiz, submitting]);
+  }, [activeAttempt, activeQuiz, submitting, user]);
 
   const handleTerminateQuiz = useCallback(async () => {
     if (!activeAttempt || !activeQuiz || submitting) return;
     try {
       setSubmitting(true);
-      const res = await api.post(`/api/student/quizzes/${activeQuiz.id}/terminate`, {
-        answers: activeAttempt.answers,
-        attemptId: activeAttempt.id
-      });
-      toast.error('Oops! Evans Got You. You have been granted exactly 1 retake attempt to restart.');
+      toast.error('Quiz session was terminated.');
       fetchQuizzes();
 
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => { });
       }
-
-      await reviewQuiz(activeAttempt.id);
+      setShowResults(true);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -1529,6 +1550,7 @@ function MCQQuestionBuilder({ questions, setQuestions }: { questions: any[]; set
 
 // ─── CREATE QUIZ FORM ─────────────────────────────────────
 function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; onRefresh: () => void; isAdmin: boolean }) {
+  const { user } = useAuth();
   const [form, setForm] = useState({ title: '', timeLimit: '30', attemptLimit: '1', courseId: '', dueDate: '', instructions: '' });
   const [classIds, setClassIds] = useState<string[]>([]);
   const [questions, setQuestions] = useState<any[]>([]);
@@ -1537,8 +1559,8 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const endpoint = isAdmin ? '/api/admin/courses' : '/api/teacher/my-courses';
-    api.get(endpoint).then(res => setCourses(Array.isArray(res) ? res : res.courses || [])).catch(() => { });
+    getCourses().then(setCourses).catch(() => {});
+    getClasses().then(setAvailableClasses).catch(() => {});
   }, [isAdmin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1557,15 +1579,36 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
 
     try {
       setLoading(true);
-      const endpoint = isAdmin ? '/api/admin/quizzes' : '/api/teacher/quizzes';
-      await api.post(endpoint, {
-        ...form,
+      const course = courses.find((c: any) => c.id === form.courseId);
+      const newQuiz = await createQuiz({
+        title: form.title,
+        courseId: form.courseId,
+        courseTitle: course?.title || '',
+        duration: parseInt(form.timeLimit) || 30,
+        attemptLimit: parseInt(form.attemptLimit) || 1,
+        dueDate: form.dueDate || undefined,
+        instructions: form.instructions || undefined,
+        isPublished: true,
+        createdBy: user?.id as string || 'system',
+        createdByName: user?.fullName || user?.name || 'Teacher',
         classIds,
-        timeLimit: parseInt(form.timeLimit),
-        attemptLimit: parseInt(form.attemptLimit),
-        dueDate: form.dueDate || null,
-        questions,
       });
+
+      // Save questions to Firestore subcollection / collection
+      for (const q of questions) {
+        await createQuizQuestion({
+          quizId: newQuiz.id,
+          questionText: q.questionText,
+          points: q.points || 1,
+          options: q.options.map((o: any, oi: number) => ({
+            id: String(oi),
+            label: o.optionLabel || ['A', 'B', 'C', 'D'][oi],
+            text: o.optionText,
+            isCorrect: !!o.isCorrect,
+          })),
+        });
+      }
+
       toast.success('Quiz created successfully!');
       onRefresh();
       onClose();
@@ -1593,9 +1636,6 @@ function CreateQuizForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; 
           <Label>Subject</Label>
           <Select value={form.courseId} onValueChange={v => {
             setForm(p => ({ ...p, courseId: v }));
-            setClassIds([]);
-            const course = courses.find((c: any) => c.id.toString() === v);
-            setAvailableClasses(course?.courseClasses?.map((cc: any) => cc.class) || []);
           }}>
             <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
             <SelectContent>
@@ -1662,21 +1702,19 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
     timeLimit: quiz.duration?.toString() || '30',
     attemptLimit: quiz.attemptLimit?.toString() || '1',
     courseId: quiz.courseId?.toString() || '',
-    isPublished: quiz.isPublished || false,
+    isPublished: quiz.isPublished ?? true,
     dueDate: quiz.dueDate ? new Date(quiz.dueDate).toISOString().substring(0, 16) : '',
     instructions: quiz.instructions || '',
   });
 
-  const [classIds, setClassIds] = useState<string[]>(
-    quiz.quizClasses?.map((qc: any) => qc.classId.toString()) || []
-  );
+  const [classIds, setClassIds] = useState<string[]>(quiz.classIds || []);
 
   const existingQuestions = (quiz.quizQuestions || []).map((q: any) => ({
     questionText: q.questionText,
     points: q.points || 1,
     options: (q.options || []).map((o: any) => ({
-      optionLabel: o.optionLabel,
-      optionText: o.optionText,
+      optionLabel: o.label || o.optionLabel,
+      optionText: o.text || o.optionText,
       isCorrect: o.isCorrect,
     })),
   }));
@@ -1686,19 +1724,9 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
   const [availableClasses, setAvailableClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const initialCourseId = useRef(quiz.courseId?.toString() || '');
-
   useEffect(() => {
-    const endpoint = isAdmin ? '/api/admin/courses' : '/api/teacher/my-courses';
-    api.get(endpoint).then(res => {
-      const fetchedCourses = Array.isArray(res) ? res : res.courses || [];
-      setCourses(fetchedCourses);
-
-      if (initialCourseId.current) {
-        const course = fetchedCourses.find((c: any) => c.id.toString() === initialCourseId.current);
-        setAvailableClasses(course?.courseClasses?.map((cc: any) => cc.class) || []);
-      }
-    }).catch(() => { });
+    getCourses().then(setCourses).catch(() => {});
+    getClasses().then(setAvailableClasses).catch(() => {});
   }, [isAdmin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1715,17 +1743,16 @@ function EditQuizForm({ quiz, onClose, onRefresh, isAdmin }: { quiz: any; onClos
 
     try {
       setLoading(true);
-      const endpoint = isAdmin ? `/api/admin/quizzes/${quiz.id}` : `/api/teacher/quizzes/${quiz.id}`;
-      await api.put(endpoint, {
+      await updateQuiz(quiz.id, {
         title: form.title,
-        instructions: form.instructions || null,
-        timeLimit: parseInt(form.timeLimit),
-        attemptLimit: parseInt(form.attemptLimit),
+        instructions: form.instructions || undefined,
+        duration: parseInt(form.timeLimit) || 30,
+        attemptLimit: parseInt(form.attemptLimit) || 1,
         isPublished: form.isPublished,
-        dueDate: form.dueDate || null,
+        dueDate: form.dueDate || undefined,
         classIds,
-        questions,
       });
+
       toast.success('Quiz updated successfully!');
       onRefresh();
       onClose();

@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Search, Download, FileText, AlertCircle, Shield, ArrowRight, Loader2, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { getAuditLogs, deleteAuditLog } from '@/lib/services/settingsService';
 import { toast } from 'sonner';
 
 export default function AuditLogsPage() {
@@ -22,8 +22,8 @@ export default function AuditLogsPage() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/admin/audit-logs');
-      setLogs(Array.isArray(res) ? res : []);
+      const res = await getAuditLogs(200);
+      setLogs(res);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -31,10 +31,10 @@ export default function AuditLogsPage() {
     }
   };
 
-  const handleDeleteLog = async (id: number) => {
+  const handleDeleteLog = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this log entry?')) return;
     try {
-      await api.delete(`/api/admin/audit-logs/${id}`);
+      await deleteAuditLog(id);
       toast.success('Log entry deleted');
       setLogs(prev => prev.filter(log => log.id !== id));
     } catch (err: any) {

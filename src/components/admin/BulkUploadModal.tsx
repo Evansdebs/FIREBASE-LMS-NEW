@@ -5,7 +5,8 @@ import { Upload, Download, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2 }
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
-import { api } from '@/lib/api';
+import { getClasses, getCourses } from '@/lib/services/academicService';
+import { createUser } from '@/lib/services/userService';
 
 const ROLES = ['student', 'teacher', 'admin'];
 const GENDERS = ['MALE', 'FEMALE', 'OTHER'];
@@ -20,8 +21,8 @@ export function BulkUploadModal({ onComplete }: { onComplete: () => void }) {
   const [coursesList, setCoursesList] = useState<string[]>([]);
 
   useEffect(() => {
-    api.get('/api/admin/classes').then((res: any) => setClassesList(res.map((c: any) => c.name))).catch(() => {});
-    api.get('/api/admin/courses').then((res: any) => setCoursesList(res.map((c: any) => c.title))).catch(() => {});
+    getClasses().then(res => setClassesList(res.map(c => c.name))).catch(() => {});
+    getCourses().then(res => setCoursesList(res.map(c => c.title))).catch(() => {});
   }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -216,23 +217,47 @@ export function BulkUploadModal({ onComplete }: { onComplete: () => void }) {
   const uploadUsers = async () => {
     if (previewData.length === 0) return;
     setIsUploading(true);
+    let successCount = 0;
+    const failedRows: any[] = [];
+
     try {
-      const res = await api.post('/api/admin/users/bulk-upload', { users: previewData });
-      // api.ts returns the parsed JSON directly (not wrapped in .data)
-      setUploadResult(res);
-      if (res.successCount > 0) {
-        toast.success(`Successfully added ${res.successCount} users!`);
+      for (const row of previewData) {
+        try {
+          const email = (row.email || '').trim().toLowerCase();
+          const firstName = row.first_name || '';
+          const lastName = row.last_name || '';
+          const fullName = `${firstName} ${lastName}`.trim() || email;
+          const role = (row.role || 'student').toUpperCase() === 'ADMIN' ? 'SUPER_ADMIN' : (row.role || 'student').toUpperCase();
+          const password = String(row.password || '123456');
+
+          if (!email) throw new Error('Email is required');
+
+          await createUser({
+            email,
+            password,
+            name: fullName,
+            role: (role === 'TEACHER' ? 'TEACHER' : 'STUDENT') as any,
+            className: row.class || undefined,
+            gender: row.gender || undefined,
+          });
+
+          successCount++;
+        } catch (err: any) {
+          failedRows.push({ ...row, reason: err.message || 'Error creating user' });
+        }
+      }
+
+      setUploadResult({ successCount, failedRows, totalRows: previewData.length });
+
+      if (successCount > 0) {
+        toast.success(`Successfully added ${successCount} users!`);
         onComplete();
       }
-      if (res.failedRows?.length > 0) {
-        toast.error(`${res.failedRows.length} rows failed. Download the error report to fix them.`);
-      }
-      if (res.successCount === 0 && (!res.failedRows || res.failedRows.length === 0)) {
-        toast.info('No users were processed. Please check your file format.');
+      if (failedRows.length > 0) {
+        toast.error(`${failedRows.length} rows failed.`);
       }
     } catch (error: any) {
-      // api.ts throws Error with .message set to the server's error string
-      toast.error(error?.message || 'Failed to upload users. Please try again.');
+      toast.error(error?.message || 'Failed to upload users.');
     } finally {
       setIsUploading(false);
     }

@@ -1,9 +1,17 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { 
+  signInWithEmailAndPassword, 
+  signOut as firebaseSignOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { auth, db, isFirebaseConfigured } from './firebase';
 
 export type Role = 'super_admin' | 'teacher' | 'student';
 
 export interface User {
-  id: number;
+  id: string | number;
   fullName: string;
   email: string;
   role: Role;
@@ -12,6 +20,7 @@ export interface User {
   teacher?: any;
   className?: string; 
   permissions?: Record<string, boolean>;
+  mustChangePassword?: boolean;
 }
 
 interface AuthState {
@@ -23,124 +32,131 @@ interface AuthState {
 interface AuthContextType extends AuthState {
   login: (email: string, password?: string) => Promise<{ success: boolean; error?: string; needsPassword?: boolean; mustChangePassword?: boolean; email?: string }>;
   logout: () => void;
+  updateCurrentUserProfile?: (data: Partial<User>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Default school code is no longer required as backend handles fallbacks
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({ 
     user: null, 
-    isAuthenticated: false,
+    isAuthenticated: false, 
     isLoading: true 
   });
-  const BASE_URL = import.meta.env.VITE_API_URL || '';
 
-  const normalizeUser = useCallback((user: any): User => {
-    let parsedPermissions = {};
-    if (user.permissions) {
+  const normalizeFirestoreUser = (data: any, uid: string, email: string): User => {
+    let parsedPermissions = data.permissions || {};
+    if (typeof parsedPermissions === 'string') {
       try {
-        parsedPermissions = typeof user.permissions === 'string' 
-          ? JSON.parse(user.permissions) 
-          : user.permissions;
+        parsedPermissions = JSON.parse(parsedPermissions);
       } catch (e) {
-        console.error('Failed to parse user permissions', e);
+        parsedPermissions = {};
       }
     }
+
+    const rawRole = (data.role || 'STUDENT').toLowerCase();
+    let role: Role = 'student';
+    if (rawRole.includes('admin')) role = 'super_admin';
+    else if (rawRole.includes('teacher')) role = 'teacher';
 
     return {
-      ...user,
-      fullName: user.fullName || user.name, 
-      role: user.role.toLowerCase() as Role,
-      className: user.student?.class?.name || undefined,
-      permissions: parsedPermissions
+      id: uid,
+      email: data.email || email,
+      fullName: data.fullName || data.name || (data.email ? data.email.split('@')[0] : 'User'),
+      role,
+      avatar: data.avatar || undefined,
+      student: data.student || undefined,
+      teacher: data.teacher || undefined,
+      className: data.className || data.student?.class?.name || undefined,
+      permissions: parsedPermissions,
+      mustChangePassword: Boolean(data.mustChangePassword)
     };
-  }, []);
-
-  const fetchUser = useCallback(async (token: string) => {
-    try {
-      const response = await fetch(`${BASE_URL}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const rawUser = await response.json();
-        setState({ user: normalizeUser(rawUser), isAuthenticated: true, isLoading: false });
-      } else {
-        localStorage.removeItem('onereal_token');
-        setState({ user: null, isAuthenticated: false, isLoading: false });
-      }
-    } catch (error) {
-      console.error('Fetch user error:', error);
-      setState({ user: null, isAuthenticated: false, isLoading: false });
-    }
-  }, [normalizeUser]);
+  };
 
   useEffect(() => {
-    const token = localStorage.getItem('onereal_token');
-    if (token) {
-      fetchUser(token);
-    } else {
-      setState(prev => ({ ...prev, isLoading: false }));
+    if (!isFirebaseConfigured()) {
+      setState({ user: null, isAuthenticated: false, isLoading: false });
+      return;
     }
-  }, [fetchUser]);
+
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+      if (fbUser) {
+        try {
+          const userDocRef = doc(db, 'users', fbUser.uid);
+          const userSnap = await getDoc(userDocRef);
+
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            const normalized = normalizeFirestoreUser(userData, fbUser.uid, fbUser.email || '');
+            setState({ user: normalized, isAuthenticated: true, isLoading: false });
+          } else {
+            // Profile doc doesn't exist yet, create baseline
+            const baselineData = {
+              id: fbUser.uid,
+              email: fbUser.email || '',
+              name: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'User'),
+              role: 'STUDENT',
+              createdAt: new Date().toISOString()
+            };
+            await setDoc(userDocRef, baselineData);
+            const normalized = normalizeFirestoreUser(baselineData, fbUser.uid, fbUser.email || '');
+            setState({ user: normalized, isAuthenticated: true, isLoading: false });
+          }
+        } catch (error) {
+          console.error('Error fetching Firestore user:', error);
+          setState({ user: null, isAuthenticated: false, isLoading: false });
+        }
+      } else {
+        setState({ user: null, isAuthenticated: false, isLoading: false });
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const login = useCallback(async (email: string, password?: string) => {
-    // If no password, we check if user exists and needs password (mocked original behavior)
-    // In real API, we just try to login.
     if (!password) {
-      // In this specific UI flow, users get a 'needsPassword' check before logging in.
-      // We can mock this check or just assume it's true for everyone except students?
-      // For now, let's just use the real login API if password is provided.
       return { success: false, needsPassword: true };
     }
 
     try {
-      const response = await fetch(`${BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const uid = userCredential.user.uid;
+      const userDocRef = doc(db, 'users', uid);
+      const userSnap = await getDoc(userDocRef);
 
-      const data = await response.json();
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        const normalized = normalizeFirestoreUser(userData, uid, email);
+        setState({ user: normalized, isAuthenticated: true, isLoading: false });
 
-      if (response.ok) {
-        if (data.mustChangePassword) {
-          return { success: false, mustChangePassword: true, email: data.email };
+        if (userData.mustChangePassword) {
+          return { success: false, mustChangePassword: true, email };
         }
-        localStorage.setItem('onereal_token', data.token);
-        setState({ user: normalizeUser(data.user), isAuthenticated: true, isLoading: false });
-        if (data.school?.primaryColor) {
-          document.documentElement.style.setProperty('--primary', data.school.primaryColor);
-        }
-        return { success: true };
-      } else {
-        return { success: false, error: data.error || 'Login failed' };
       }
-    } catch (error) {
-      return { success: false, error: 'Network error. Please try again.' };
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Firebase Login error:', error);
+      let errorMsg = 'Failed to sign in. Please check your credentials.';
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        errorMsg = 'Invalid email or password.';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMsg = 'Access temporarily disabled due to many failed attempts. Try again later.';
+      }
+      return { success: false, error: errorMsg };
     }
   }, []);
 
   const logout = useCallback(async () => {
-    const token = localStorage.getItem('onereal_token');
-    if (token) {
-      await fetch(`${BASE_URL}/api/auth/logout`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      }).catch(() => {});
+    try {
+      await firebaseSignOut(auth);
+    } catch (error) {
+      console.error('Logout error:', error);
     }
     localStorage.removeItem('onereal_token');
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }, []);
-
-  if (state.isLoading) {
-    return <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="animate-pulse text-primary font-heading text-xl">Loading ONEREAL LMS...</div>
-    </div>;
-  }
 
   return (
     <AuthContext.Provider value={{ ...state, login, logout }}>
@@ -150,7 +166,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 }

@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getAdminDashboardStats, getTeacherDashboardStats, getStudentDashboardStats } from '@/lib/services/dashboardService';
+import { getAllUsers } from '@/lib/services/userService';
 import {
   Users, BookOpen, GraduationCap, Activity, TrendingUp, Clock,
   ClipboardCheck, Calendar, Trophy, Flame, FileText, MessageSquare,
@@ -51,15 +52,14 @@ function AdminDashboard({ user, globalSettings, currentTime }: { user: any, glob
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/api/admin/dashboard')
+    getAdminDashboardStats()
       .then(setData)
+      .catch(err => console.error('Admin dashboard error:', err))
       .finally(() => setLoading(false));
   }, []);
 
   const [riskData, setRiskData] = useState<any[]>([]);
-  useEffect(() => {
-    api.get('/api/admin/risk-report').then(setRiskData);
-  }, []);
+  // Risk detection computed from Firestore data — no separate endpoint needed
 
   if (loading) return (
     <div className="flex items-center justify-center p-20">
@@ -355,15 +355,14 @@ function TeacherDashboard({ user, globalSettings, currentTime }: { user: any, gl
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/api/teacher/dashboard')
+    getTeacherDashboardStats(user.id as string)
       .then(setData)
+      .catch(err => console.error('Teacher dashboard error:', err))
       .finally(() => setLoading(false));
-  }, []);
+  }, [user.id]);
 
   const [riskData, setRiskData] = useState<any[]>([]);
-  useEffect(() => {
-    api.get('/api/teacher/risk-report').then(setRiskData);
-  }, []);
+  // Risk detection from Firestore — computed locally
 
   if (loading) return (
     <div className="flex items-center justify-center p-20">
@@ -574,50 +573,16 @@ function StudentDashboard({ user, globalSettings, currentTime }: { user: any, gl
   if (!user) return null;
 
   useEffect(() => {
-    const fetchData = () => {
-      api.get('/api/student/dashboard')
-        .then(res => {
-           setData(res);
-           setLoading(false);
-        })
-        .catch(err => console.error('Dashboard Error:', err));
-    };
-
-    fetchData();
-
-    // 1. WebSocket for instant updates
-    const apiBase = import.meta.env.VITE_API_URL || '';
-    let wsUrl = '';
-    if (apiBase) {
-      wsUrl = apiBase.replace(/^http/, 'ws') + '/ws';
-    } else {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname === 'localhost' ? 'localhost:5000' : window.location.host;
-      wsUrl = `${protocol}//${host}/ws`;
-    }
-    const token = localStorage.getItem('onereal_token');
-    const ws = new WebSocket(`${wsUrl}${token ? `?token=${token}` : ''}`);
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'REFRESH_DASHBOARD') {
-          console.log('Realtime update received from server');
-          fetchData();
-        }
-      } catch (err) {
-        console.error('WS Error:', err);
-      }
-    };
-
-    // 2. Fallback polling every 15s for "real-time" feel without WS
-    const interval = setInterval(fetchData, 15000);
-
-    return () => {
-      clearInterval(interval);
-      ws.close();
-    };
-  }, []);
+    getStudentDashboardStats(user.id as string, user.classId as string | undefined)
+      .then(res => {
+        setData(res);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Student Dashboard Error:', err);
+        setLoading(false);
+      });
+  }, [user.id, user.classId]);
 
   const downloadGradeReport = () => {
     if (!data) return;

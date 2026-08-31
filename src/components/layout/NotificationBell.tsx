@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import {
   Popover, PopoverContent, PopoverTrigger
 } from '@/components/ui/popover';
-import { api } from '@/lib/api';
+import { subscribeToNotifications, markNotificationRead } from '@/lib/services/messageService';
 import { useAuth } from '@/lib/auth-context';
 
 export default function NotificationBell() {
@@ -17,38 +17,30 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      fetchNotifications();
-      // Polling could be added here if needed, or rely on WebSockets for real-time
-      const interval = setInterval(fetchNotifications, 60000);
-      return () => clearInterval(interval);
-    }
+    if (!user) return;
+    const unsub = subscribeToNotifications(user.id as string, user.role as string, (notifs) => {
+      setNotifications(notifs);
+    });
+    return unsub;
   }, [user]);
-
-  const fetchNotifications = async () => {
-    try {
-      const res = await api.get('/api/messages/notifications');
-      setNotifications(Array.isArray(res) ? res : []);
-    } catch (err) {
-      console.error('Failed to fetch notifications', err);
-    }
-  };
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-  const markRead = async (id: number) => {
+  const markRead = async (id: string) => {
     try {
-      await api.put(`/api/messages/notifications/${id}/read`, {});
+      await markNotificationRead(id);
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     } catch (err) {
       // Ignore
     }
   };
 
-  const deleteNotification = async (e: React.MouseEvent, id: number) => {
-    e.stopPropagation(); // Don't trigger markRead
+  const deleteNotification = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
     try {
-      await api.delete(`/api/messages/notifications/${id}`);
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase');
+      await deleteDoc(doc(db, 'notifications', id));
       setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (err) {
       console.error('Failed to delete notification', err);

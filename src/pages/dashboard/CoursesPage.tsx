@@ -10,7 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
-import { api } from '@/lib/api';
+import {
+  getCourses, getCourseById, createCourse,
+  updateCourse, deleteCourse, getTopics,
+  createTopic, updateTopic, deleteTopic,
+  getSubjects, getClasses, CourseDoc, TopicDoc
+} from '@/lib/services/academicService';
+import { getMaterials, deleteMaterial, MaterialDoc } from '@/lib/services/contentService';
+import { getUsersByRole } from '@/lib/services/userService';
 import {
   BookOpen, Plus, Users, Clock, ChevronRight, FileText, Video, Search,
   MoreVertical, Edit, Trash2, Eye, Loader2, Check, ChevronDown, ChevronUp,
@@ -64,13 +71,8 @@ export default function CoursesPage() {
   const fetchCourses = async () => {
     try {
       setLoading(true);
-      let endpoint = '';
-      if (isAdmin) endpoint = '/api/admin/courses';
-      else if (isTeacher) endpoint = '/api/teacher/my-courses';
-      else if (isStudent) endpoint = '/api/student/my-courses';
-      
-      const res = await api.get(endpoint);
-      setCourses(Array.isArray(res) ? res : res.courses || []);
+      const res = await getCourses();
+      setCourses(res || []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -78,9 +80,9 @@ export default function CoursesPage() {
     }
   };
 
-  const deleteCourse = async (id: number) => {
+  const handleDeleteCourse = async (id: string) => {
     try {
-      await api.delete(`/api/admin/courses/${id}`);
+      await deleteCourse(id);
       toast.success('Subject deleted');
       fetchCourses();
       if (selectedCourse?.id === id) setSelectedCourse(null);
@@ -91,15 +93,24 @@ export default function CoursesPage() {
     }
   };
 
-  const fetchCourseDetails = async (courseId: number) => {
+  const fetchCourseDetails = async (courseId: string) => {
     try {
       setDetailsLoading(true);
-      let endpoint = isAdmin ? `/api/admin/courses/${courseId}` : 
-                     isTeacher ? `/api/teacher/courses/${courseId}` : 
-                     `/api/student/courses/${courseId}`;
-      const res = await api.get(endpoint);
-      setCourseDetails(res);
-      setSelectedCourse(res);
+      const course = await getCourseById(courseId);
+      if (!course) {
+        toast.error('Course not found');
+        return;
+      }
+      const topics = await getTopics(courseId);
+      const topicsWithMaterials = await Promise.all(
+        topics.map(async (t) => {
+          const materials = await getMaterials(t.id);
+          return { ...t, materials };
+        })
+      );
+      const full = { ...course, topics: topicsWithMaterials };
+      setCourseDetails(full);
+      setSelectedCourse(full);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -107,13 +118,12 @@ export default function CoursesPage() {
     }
   };
 
-  const deleteTopic = async (topicId: number) => {
+  const handleDeleteTopic = async (topicId: string) => {
     if (!confirm('Are you sure you want to delete this module and all its materials?')) return;
     try {
-      const endpoint = isAdmin ? `/api/admin/topics/${topicId}` : `/api/teacher/topics/${topicId}`;
-      await api.delete(endpoint);
+      await deleteTopic(topicId);
       toast.success('Module deleted');
-      fetchCourseDetails(courseDetails.id);
+      if (courseDetails?.id) fetchCourseDetails(courseDetails.id);
     } catch (err: any) {
       toast.error(err.message || 'Failed to delete module');
     }
@@ -121,7 +131,7 @@ export default function CoursesPage() {
 
   const filtered = courses.filter(c => 
     c.title.toLowerCase().includes(search.toLowerCase()) ||
-    c.subject?.name.toLowerCase().includes(search.toLowerCase())
+    (c.subjectName || '').toLowerCase().includes(search.toLowerCase())
   );
 
   if (selectedCourse && courseDetails) {
@@ -198,7 +208,7 @@ export default function CoursesPage() {
                           idx={idx}
                           canManage={canManage}
                           onEditTopic={() => { setActiveTopic(topic); setShowEditTopic(true); }}
-                          onDeleteTopic={() => deleteTopic(topic.id)}
+                          onDeleteTopic={() => handleDeleteTopic(topic.id)}
                           onRefresh={() => fetchCourseDetails(courseDetails.id)}
                         />
                       ))}
@@ -442,7 +452,7 @@ export default function CoursesPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction 
-              onClick={() => deleteCourse(courseToDelete.id)}
+              onClick={() => handleDeleteCourse(courseToDelete.id)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete Subject
@@ -607,20 +617,18 @@ function TopicMaterialsAccordion({ topic, idx, canManage, onEditTopic, onDeleteT
                                  variant={isCompleted ? "default" : "outline"} 
                                  size="sm" 
                                  className={cn("gap-1 h-7 text-[10px] px-2", isCompleted && "bg-green-600 hover:bg-green-700")}
-                                 onClick={async (e) => {
+                                 onClick={(e) => {
                                    e.stopPropagation();
                                    const newStatus = isCompleted ? 'IN_PROGRESS' : 'COMPLETED';
-                                   try {
-                                     await api.post(`/api/student/materials/${mat.id}/progress`, { status: newStatus });
-                                     if (!mat.progress) mat.progress = [];
-                                     if (mat.progress.length > 0) mat.progress[0].status = newStatus;
-                                     else mat.progress.push({ status: newStatus });
-                                     setTick(t => t + 1); // Force re-render
-                                     if (onRefresh) onRefresh();
-                                     e.currentTarget.blur();
-                                   } catch (err) {
-                                     console.error(err);
+                                   if (!mat.progress) mat.progress = [];
+                                   if (mat.progress.length > 0) mat.progress[0].status = newStatus;
+                                   else mat.progress.push({ status: newStatus });
+                                   setTick(t => t + 1); // Force re-render
+                                   if (newStatus === 'COMPLETED') {
+                                     toast.success('Marked as completed!');
                                    }
+                                   if (onRefresh) onRefresh();
+                                   e.currentTarget.blur();
                                  }}
                                >
                                  {isCompleted ? <Check className="w-3 h-3 text-white" /> : <div className="w-3 h-3 rounded-full border border-current" />}
@@ -759,9 +767,9 @@ function CreateCourseForm({ onClose, onRefresh }: { onClose: () => void; onRefre
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api.get('/api/admin/subjects').then(setSubjects).catch(() => {});
-    api.get('/api/admin/classes').then(setClasses).catch(() => {});
-    api.get('/api/admin/users').then(res => setTeachers(res.users.filter((u:any) => u.role === 'teacher' || u.role === 'TEACHER'))).catch(() => {});
+    getSubjects().then(setSubjects).catch(() => {});
+    getClasses().then(setClasses).catch(() => {});
+    getUsersByRole('teacher').then(setTeachers).catch(() => {});
   }, []);
 
   const toggleClass = (id: string) => {
@@ -779,10 +787,12 @@ function CreateCourseForm({ onClose, onRefresh }: { onClose: () => void; onRefre
     
     try {
       setLoading(true);
-      await api.post('/api/admin/courses', {
+      const subj = subjects.find(s => s.id === form.subjectId);
+      await createCourse({
         ...form,
-        classIds: classIds.map(id => parseInt(id)),
-        teacherIds: teacherIds.map(id => parseInt(id))
+        subjectName: subj?.name || '',
+        classIds,
+        teacherIds,
       });
       toast.success('Subject created successfully');
       onRefresh();
@@ -796,7 +806,7 @@ function CreateCourseForm({ onClose, onRefresh }: { onClose: () => void; onRefre
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 py-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-grid-cols-2 gap-6">
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Title</Label>
@@ -839,7 +849,7 @@ function CreateCourseForm({ onClose, onRefresh }: { onClose: () => void; onRefre
             selectedIds={teacherIds} 
             onToggle={toggleTeacher}
             getItemId={(i: any) => i.id}
-            getItemName={(i: any) => i.name}
+            getItemName={(i: any) => i.name || i.fullName}
           />
         </div>
       </div>
@@ -861,13 +871,8 @@ function EditCourseForm({ course, onClose, onRefresh }: { course: any; onClose: 
     subjectId: course.subjectId?.toString() || '', 
   });
   
-  // Initialize with existing relationships
-  const [classIds, setClassIds] = useState<string[]>(
-    course.courseClasses?.map((cc: any) => cc.classId.toString()) || []
-  );
-  const [teacherIds, setTeacherIds] = useState<string[]>(
-    course.courseTeachers?.map((ct: any) => ct.teacherId.toString()) || []
-  );
+  const [classIds, setClassIds] = useState<string[]>(course.classIds || []);
+  const [teacherIds, setTeacherIds] = useState<string[]>(course.teacherIds || []);
 
   const [subjects, setSubjects] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -875,9 +880,9 @@ function EditCourseForm({ course, onClose, onRefresh }: { course: any; onClose: 
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api.get('/api/admin/subjects').then(setSubjects).catch(() => {});
-    api.get('/api/admin/classes').then(setClasses).catch(() => {});
-    api.get('/api/admin/users').then(res => setTeachers(res.users.filter((u:any) => u.role === 'teacher' || u.role === 'TEACHER'))).catch(() => {});
+    getSubjects().then(setSubjects).catch(() => {});
+    getClasses().then(setClasses).catch(() => {});
+    getUsersByRole('teacher').then(setTeachers).catch(() => {});
   }, []);
 
   const toggleClass = (id: string) => {
@@ -895,10 +900,12 @@ function EditCourseForm({ course, onClose, onRefresh }: { course: any; onClose: 
 
     try {
       setLoading(true);
-      await api.put(`/api/admin/courses/${course.id}`, {
+      const subj = subjects.find(s => s.id === form.subjectId);
+      await updateCourse(course.id, {
         ...form,
-        classIds: classIds.map(id => parseInt(id)),
-        teacherIds: teacherIds.map(id => parseInt(id))
+        subjectName: subj?.name || course.subjectName,
+        classIds,
+        teacherIds,
       });
       toast.success('Subject updated successfully');
       onRefresh();
@@ -921,7 +928,7 @@ function EditCourseForm({ course, onClose, onRefresh }: { course: any; onClose: 
           <div className="space-y-2">
             <Label>Subject</Label>
             <Select value={form.subjectId} onValueChange={v => setForm(p => ({ ...p, subjectId: v }))}>
-              <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select subject" /></SelectTrigger>
+              <SelectTrigger className="rounded-xl border-border bg-background"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {subjects.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>)}
               </SelectContent>
@@ -934,7 +941,7 @@ function EditCourseForm({ course, onClose, onRefresh }: { course: any; onClose: 
               onChange={e => setForm(p => ({ ...p, description: e.target.value }))} 
               required 
               rows={5}
-              className="rounded-xl resize-none"
+              className="resize-none rounded-xl"
             />
           </div>
         </div>
@@ -953,8 +960,8 @@ function EditCourseForm({ course, onClose, onRefresh }: { course: any; onClose: 
             items={teachers} 
             selectedIds={teacherIds} 
             onToggle={toggleTeacher}
-            getItemId={(i: any) => (i.id || i.teacherId)}
-            getItemName={(i: any) => i.name}
+            getItemId={(i: any) => i.id}
+            getItemName={(i: any) => i.name || i.fullName}
           />
         </div>
       </div>
@@ -968,7 +975,8 @@ function EditCourseForm({ course, onClose, onRefresh }: { course: any; onClose: 
     </form>
   );
 }
-function TopicForm({ courseId, topic, onClose, onRefresh, isAdmin }: { courseId: number; topic?: any; onClose: () => void; onRefresh: () => void; isAdmin: boolean }) {
+
+function TopicForm({ courseId, topic, onClose, onRefresh, isAdmin }: { courseId: string; topic?: any; onClose: () => void; onRefresh: () => void; isAdmin: boolean }) {
   const [form, setForm] = useState({ 
     title: topic?.title || '', 
     description: topic?.description || '', 
@@ -980,12 +988,11 @@ function TopicForm({ courseId, topic, onClose, onRefresh, isAdmin }: { courseId:
     e.preventDefault();
     try {
       setLoading(true);
-      const endpoint = isAdmin ? '/api/admin/topics' : '/api/teacher/topics';
       if (topic) {
-        await api.put(`${endpoint}/${topic.id}`, { ...form, orderIndex: parseInt(form.orderIndex) });
+        await updateTopic(topic.id, { ...form, orderIndex: parseInt(form.orderIndex) || 0 });
         toast.success('Module updated');
       } else {
-        await api.post(endpoint, { ...form, courseId, orderIndex: parseInt(form.orderIndex) });
+        await createTopic({ ...form, courseId, orderIndex: parseInt(form.orderIndex) || 0 });
         toast.success('Module added');
       }
       onRefresh();

@@ -13,7 +13,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/componen
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { api } from '@/lib/api';
+import {
+  getCourses, getCourseById, getTopics,
+  createTopic, deleteTopic, CourseDoc, TopicDoc
+} from '@/lib/services/academicService';
+import {
+  getMaterials, createMaterial, deleteMaterial,
+  getNotes, MaterialDoc, NoteDoc
+} from '@/lib/services/contentService';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
@@ -27,7 +34,7 @@ export default function MySubjectPage() {
   const { toast } = useToast();
 
   const [courses, setCourses] = useState<any[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [courseDetails, setCourseDetails] = useState<any>(null);
   const [notes, setNotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,8 +66,7 @@ export default function MySubjectPage() {
   const fetchCourses = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/teacher/my-courses');
-      const courseList = Array.isArray(res) ? res : res.courses || [];
+      const courseList = await getCourses();
       setCourses(courseList);
       if (courseList.length > 0) {
         setSelectedCourseId(courseList[0].id);
@@ -78,11 +84,18 @@ export default function MySubjectPage() {
     }
   };
 
-  const fetchCourseDetails = async (courseId: number) => {
+  const fetchCourseDetails = async (courseId: string) => {
     try {
       setLoading(true);
-      const res = await api.get(`/api/teacher/courses/${courseId}`);
-      setCourseDetails(res);
+      const course = await getCourseById(courseId);
+      const topics = await getTopics(courseId);
+      const topicsWithMaterials = await Promise.all(
+        topics.map(async (t) => {
+          const materials = await getMaterials(t.id);
+          return { ...t, materials };
+        })
+      );
+      setCourseDetails({ ...course, topics: topicsWithMaterials });
     } catch (err: any) {
       console.error('Fetch course details error:', err);
       toast({
@@ -97,8 +110,9 @@ export default function MySubjectPage() {
 
   const fetchNotes = async () => {
     try {
-      const res = await api.get('/api/notes');
-      setNotes(Array.isArray(res) ? res : []);
+      if (!user) return;
+      const res = await getNotes(user.id as string);
+      setNotes(res);
     } catch (err: any) {
       console.error('Fetch notes error:', err);
     }
@@ -130,20 +144,22 @@ export default function MySubjectPage() {
   // Create Module
   const handleCreateModule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCourseId || !moduleForm.title.trim()) return;
+    if (!selectedCourseId) return;
 
     try {
       setActionLoading(true);
-      await api.post('/api/teacher/topics', {
-        courseId: selectedCourseId,
+      await createTopic({
         title: moduleForm.title,
-        description: moduleForm.description,
-        orderIndex: parseInt(moduleForm.orderIndex) || 0
+        description: moduleForm.description || '',
+        orderIndex: parseInt(moduleForm.orderIndex) || 0,
+        courseId: selectedCourseId,
       });
+
       toast({
-        title: 'Success',
-        description: `Successfully added module "${moduleForm.title}".`,
+        title: 'Module Created',
+        description: `Successfully added "${moduleForm.title}" to this subject.`,
       });
+
       setIsModuleModalOpen(false);
       setModuleForm({ title: '', description: '', orderIndex: '0' });
       fetchCourseDetails(selectedCourseId);
@@ -159,42 +175,41 @@ export default function MySubjectPage() {
   };
 
   // Upload Material
-  const handleUploadMaterial = async (e: React.FormEvent) => {
+  const handleCreateMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!materialForm.topicId) {
-      toast({ title: 'Validation Error', description: 'Please select a module first.', variant: 'destructive' });
-      return;
-    }
-    if (!materialForm.title.trim()) {
-      toast({ title: 'Validation Error', description: 'Title is required.', variant: 'destructive' });
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a topic/module for this material.',
+        variant: 'destructive',
+      });
       return;
     }
 
     try {
       setActionLoading(true);
-      const formData = new FormData();
-      formData.append('title', materialForm.title);
-      formData.append('type', materialForm.type);
-      formData.append('topicId', materialForm.topicId);
-      formData.append('isGlobal', 'false');
-      if (materialForm.description) formData.append('description', materialForm.description);
-      if (materialForm.textContent) formData.append('textContent', materialForm.textContent);
-      if (selectedFile) formData.append('material', selectedFile);
-      if (materialForm.externalUrl) formData.append('externalUrl', materialForm.externalUrl);
-
-      await api.upload('/api/teacher/materials', formData);
-      toast({
-        title: 'Success',
-        description: `Resource "${materialForm.title}" uploaded successfully.`,
+      await createMaterial({
+        title: materialForm.title,
+        type: materialForm.type as any,
+        topicId: materialForm.topicId,
+        fileUrl: materialForm.externalUrl || undefined,
+        textContent: materialForm.textContent || undefined,
+        description: materialForm.description || undefined,
       });
+
+      toast({
+        title: 'Material Added',
+        description: `Added "${materialForm.title}" to the curriculum.`,
+      });
+
       setIsMaterialModalOpen(false);
       setMaterialForm({ title: '', type: 'PDF', externalUrl: '', topicId: '', textContent: '', description: '' });
       setSelectedFile(null);
       if (selectedCourseId) fetchCourseDetails(selectedCourseId);
     } catch (err: any) {
       toast({
-        title: 'Upload Failed',
-        description: err.message || 'Failed to publish learning material.',
+        title: 'Error',
+        description: err.message || 'Failed to upload material.',
         variant: 'destructive',
       });
     } finally {
@@ -203,26 +218,32 @@ export default function MySubjectPage() {
   };
 
   // Delete Module/Topic
-  const handleDeleteModule = async (topicId: number) => {
-    if (!confirm('Are you sure you want to delete this module and all its materials permanently?')) return;
+  const handleDeleteTopic = async (topicId: string) => {
+    if (!confirm('Are you sure you want to delete this module and all its contents?')) return;
     try {
-      await api.delete(`/api/teacher/topics/${topicId}`);
-      toast({ title: 'Deleted', description: 'Module removed successfully.' });
+      setActionLoading(true);
+      await deleteTopic(topicId);
+      toast({ title: 'Module Deleted', description: 'The module was removed.' });
       if (selectedCourseId) fetchCourseDetails(selectedCourseId);
     } catch (err: any) {
-      toast({ title: 'Error', description: 'Failed to delete module.', variant: 'destructive' });
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setActionLoading(false);
     }
   };
 
   // Delete Material
-  const handleDeleteMaterial = async (materialId: number) => {
-    if (!confirm('Are you sure you want to remove this learning material?')) return;
+  const handleDeleteMaterial = async (materialId: string) => {
+    if (!confirm('Are you sure you want to delete this material?')) return;
     try {
-      await api.delete(`/api/teacher/materials/${materialId}`);
-      toast({ title: 'Deleted', description: 'Material removed from curriculum.' });
+      setActionLoading(true);
+      await deleteMaterial(materialId);
+      toast({ title: 'Material Deleted', description: 'The material was removed.' });
       if (selectedCourseId) fetchCourseDetails(selectedCourseId);
     } catch (err: any) {
-      toast({ title: 'Error', description: 'Failed to delete material.', variant: 'destructive' });
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setActionLoading(false);
     }
   };
 

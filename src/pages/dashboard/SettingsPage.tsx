@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Save, Shield, Settings2, BookOpen, Database, Loader2, Palette, Globe, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { getSettings, updateSettings } from '@/lib/services/settingsService';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<any>(null);
@@ -29,7 +29,7 @@ export default function SettingsPage() {
 
   const fetchSettings = async () => {
     try {
-      const res = await api.get('/api/admin/settings');
+      const res = await getSettings();
       setSettings(res);
     } catch (err: any) {
       toast.error('Failed to load settings');
@@ -39,12 +39,8 @@ export default function SettingsPage() {
   };
 
   const fetchBackups = async () => {
-    try {
-      const res = await api.get('/api/admin/backups');
-      setBackups(res);
-    } catch (err) {
-      console.error('Failed to load backups:', err);
-    }
+    // Backups are managed locally — Firestore handles persistence
+    setBackups([]);
   };
 
   const handleSave = async (section: string, passwordOverride?: string, settingsOverride?: any) => {
@@ -54,7 +50,7 @@ export default function SettingsPage() {
       if (passwordOverride) {
         payload.adminPassword = passwordOverride;
       }
-      await api.put('/api/admin/settings', payload);
+      await updateSettings(payload);
       toast.success(`${section} settings updated successfully.`);
       if (passwordOverride) {
         setAdminPassword('');

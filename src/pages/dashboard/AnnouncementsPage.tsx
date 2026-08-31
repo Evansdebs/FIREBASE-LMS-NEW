@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Megaphone, Pin, Users, Trash2, Search, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { createNotification, subscribeToNotifications } from '@/lib/services/messageService';
 import { toast } from 'sonner';
 
 export default function AnnouncementsPage() {
@@ -25,43 +25,29 @@ export default function AnnouncementsPage() {
   const [form, setForm] = useState({ title: '', content: '', target: 'all' });
 
   useEffect(() => {
-    fetchAnnouncements();
-  }, [user]);
-
-  const fetchAnnouncements = async () => {
-    try {
-      setLoading(true);
-      const endpoint = isAdmin ? '/api/admin/notifications' : '/api/messages/notifications';
-      const res = await api.get(endpoint);
-      setAnnouncements(Array.isArray(res) ? res : []);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
+    if (!user) return;
+    setLoading(true);
+    const unsub = subscribeToNotifications(user.id as string, user.role as string, (notifs) => {
+      setAnnouncements(notifs);
       setLoading(false);
-    }
-  };
+    });
+    return unsub;
+  }, [user]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setCreating(true);
-      if (isAdmin) {
-        await api.post('/api/admin/notifications', {
-          title: form.title,
-          message: form.content,
-          type: 'ANNOUNCEMENT',
-          target: form.target,
-        });
-      } else {
-        await api.post('/api/messages/announcements', {
-          title: form.title,
-          message: form.content,
-        });
-      }
+      await createNotification({
+        title: form.title,
+        message: form.content,
+        type: 'ANNOUNCEMENT',
+        isGlobal: true,
+        targetRole: form.target !== 'all' ? form.target : undefined,
+      });
       toast.success('Announcement published!');
       setShowCreate(false);
       setForm({ title: '', content: '', target: 'all' });
-      fetchAnnouncements();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -71,11 +57,10 @@ export default function AnnouncementsPage() {
 
   const deleteAnnouncement = async (id: string) => {
     try {
-      if (isAdmin) {
-        await api.delete(`/api/admin/notifications/${id}`);
-        toast.success('Deleted announcement');
-        fetchAnnouncements();
-      }
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase');
+      await deleteDoc(doc(db, 'notifications', id));
+      toast.success('Deleted announcement');
     } catch (err: any) {
       toast.error(err.message);
     }

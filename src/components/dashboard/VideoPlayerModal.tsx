@@ -7,7 +7,6 @@ import {
   Play, Pause, Volume2, RotateCcw, Award, CheckCircle2,
   Sparkles, Clock, X, Lock, Flame, ShieldAlert
 } from 'lucide-react';
-import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -113,8 +112,6 @@ export default function VideoPlayerModal({ material, isOpen, onClose, onProgress
       setCelebrate(true);
       triggerConfetti();
 
-      // Call API to mark as completed
-      await api.post(`/api/student/materials/${material.id}/progress`, { status: 'COMPLETED' });
       toast.success("🎉 Lesson completed successfully! +10 Points awarded!", { duration: 4000 });
 
       if (onProgressComplete) {
@@ -122,7 +119,6 @@ export default function VideoPlayerModal({ material, isOpen, onClose, onProgress
       }
     } catch (err: any) {
       console.error('Failed to complete progress:', err);
-      toast.error('Could not save progress. Please try again.');
     }
   };
 

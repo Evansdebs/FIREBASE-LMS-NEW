@@ -5,11 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Pencil } from 'lucide-react';
-import { api } from '@/lib/api';
+import { updateMaterial } from '@/lib/services/contentService';
 import { useToast } from '@/components/ui/use-toast';
 
 interface Material {
-  id: number;
+  id: string | number;
   type: string;
   fileName?: string;
   title?: string;
@@ -17,7 +17,7 @@ interface Material {
   externalUrl?: string;
   textContent?: string;
   description?: string;
-  topicId?: number | null;
+  topicId?: string | number | null;
 }
 
 interface Props {
@@ -61,13 +61,12 @@ export default function EditMaterialModal({ material, open, onClose, onSaved }: 
 
     try {
       setLoading(true);
-      await api.put(`/api/teacher/materials/${material.id}`, {
+      await updateMaterial(String(material.id), {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
-        type: form.type,
+        type: form.type as any,
         textContent: form.type === 'TEXT' ? form.textContent : undefined,
-        externalUrl: form.type !== 'TEXT' && form.externalUrl ? form.externalUrl : undefined,
-        topicId: material.topicId ?? undefined,
+        fileUrl: form.type !== 'TEXT' && form.externalUrl ? form.externalUrl : undefined,
       });
       toast({ title: 'Saved', description: `Material "${form.title}" updated successfully.` });
       onSaved();

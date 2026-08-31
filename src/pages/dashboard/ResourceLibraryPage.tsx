@@ -12,13 +12,15 @@ import {
   Trash2, Upload, Plus, Edit, FileAudio, FileBadge, Play, Eye, BookOpen, Globe
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import {
+  getMaterials, createMaterial, updateMaterial,
+  deleteMaterial, MaterialDoc
+} from '@/lib/services/contentService';
+import { getCourses, getTopics } from '@/lib/services/academicService';
 import { toast } from 'sonner';
 import { Textarea } from '@/components/ui/textarea';
 import { TTSButton } from '@/components/ui/TTSButton';
 import VideoPlayerModal from '@/components/dashboard/VideoPlayerModal';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default function ResourceLibraryPage() {
   const { user } = useAuth();
@@ -33,7 +35,7 @@ export default function ResourceLibraryPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [starredOnly, setStarredOnly] = useState(false);
-  const [starredIds, setStarredIds] = useState<Set<number>>(new Set());
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const [showUpload, setShowUpload] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [activeResource, setActiveResource] = useState<any>(null);
@@ -45,26 +47,19 @@ export default function ResourceLibraryPage() {
   const fetchMaterials = async () => {
     try {
       setLoading(true);
-      let endpoint = '';
-      if (isAdmin) endpoint = '/api/admin/materials';
-      else if (isTeacher) endpoint = '/api/teacher/materials';
-      else if (isStudent) endpoint = '/api/student/materials';
-      else return;
-
-      const res = await api.get(endpoint);
-      setResources(Array.isArray(res) ? res : []);
+      const res = await getMaterials();
+      setResources(res || []);
     } catch (err: any) {
-      if (err?.status !== 403) toast.error(err.message || 'Failed to load resources');
+      toast.error(err.message || 'Failed to load resources');
     } finally {
       setLoading(false);
     }
   };
 
-  const deleteMaterial = async (id: number) => {
+  const handleDeleteMaterial = async (id: string) => {
     if (!confirm('Delete this resource? This cannot be undone.')) return;
     try {
-      const endpoint = isAdmin ? `/api/admin/materials/${id}` : `/api/teacher/materials/${id}`;
-      await api.delete(endpoint);
+      await deleteMaterial(id);
       toast.success('Resource deleted');
       fetchMaterials();
     } catch (err: any) {
@@ -436,11 +431,12 @@ function UploadResourceForm({ onClose, onRefresh, isAdmin }: { onClose: () => vo
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const courseEndpoint = isAdmin ? '/api/admin/courses' : '/api/teacher/my-courses';
-    api.get(courseEndpoint).then(res => {
-      const courses = Array.isArray(res) ? res : res.courses || [];
+    getCourses().then(async (courses) => {
       const allTopics: any[] = [];
-      courses.forEach((c: any) => (c.topics || []).forEach((t: any) => allTopics.push({ ...t, courseName: c.title || c.name })));
+      for (const c of courses) {
+        const tops = await getTopics(c.id);
+        tops.forEach(t => allTopics.push({ ...t, courseName: c.title }));
+      }
       setTopics(allTopics);
     }).catch(() => {});
   }, [isAdmin]);
@@ -454,17 +450,15 @@ function UploadResourceForm({ onClose, onRefresh, isAdmin }: { onClose: () => vo
     }
     try {
       setLoading(true);
-      const endpoint = isAdmin ? '/api/admin/materials' : '/api/teacher/materials';
-      const formData = new FormData();
-      formData.append('title', form.title);
-      formData.append('type', form.type);
-      if (!form.isGlobal) formData.append('topicId', form.topicId);
-      formData.append('isGlobal', form.isGlobal ? 'true' : 'false');
-      if (form.externalUrl) formData.append('externalUrl', form.externalUrl);
-      if (form.description) formData.append('description', form.description);
-      if (form.textContent) formData.append('textContent', form.textContent);
-      if (file) formData.append('material', file);
-      await api.upload(endpoint, formData);
+      await createMaterial({
+        title: form.title,
+        type: form.type as any,
+        topicId: form.topicId || undefined,
+        isGlobal: form.isGlobal,
+        fileUrl: form.externalUrl || undefined,
+        textContent: form.textContent || undefined,
+        description: form.description || undefined,
+      });
       toast.success('Resource added successfully!');
       onRefresh();
       onClose();
@@ -526,12 +520,7 @@ function UploadResourceForm({ onClose, onRefresh, isAdmin }: { onClose: () => vo
       ) : (
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>File Upload</Label>
-            <Input type="file" onChange={e => setFile(e.target.files?.[0] || null)} />
-          </div>
-          <div className="space-y-2 text-center text-muted-foreground py-1">OR</div>
-          <div className="space-y-2">
-            <Label>External URL (YouTube, Vimeo, Google Drive, etc.)</Label>
+            <Label>File Upload / External URL</Label>
             <Input placeholder="https://..." value={form.externalUrl} onChange={e => setForm(p => ({ ...p, externalUrl: e.target.value }))} />
           </div>
         </div>
@@ -562,11 +551,12 @@ function EditResourceForm({ resource, onClose, onRefresh, isAdmin }: { resource:
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const courseEndpoint = isAdmin ? '/api/admin/courses' : '/api/teacher/my-courses';
-    api.get(courseEndpoint).then(res => {
-      const courses = Array.isArray(res) ? res : res.courses || [];
+    getCourses().then(async (courses) => {
       const allTopics: any[] = [];
-      courses.forEach((c: any) => (c.topics || []).forEach((t: any) => allTopics.push({ ...t, courseName: c.title || c.name })));
+      for (const c of courses) {
+        const tops = await getTopics(c.id);
+        tops.forEach(t => allTopics.push({ ...t, courseName: c.title }));
+      }
       setTopics(allTopics);
     }).catch(() => {});
   }, [isAdmin]);
@@ -575,8 +565,15 @@ function EditResourceForm({ resource, onClose, onRefresh, isAdmin }: { resource:
     e.preventDefault();
     try {
       setLoading(true);
-      const endpoint = isAdmin ? `/api/admin/materials/${resource.id}` : `/api/teacher/materials/${resource.id}`;
-      await api.put(endpoint, form);
+      await updateMaterial(resource.id, {
+        title: form.title,
+        type: form.type as any,
+        topicId: form.topicId || undefined,
+        isGlobal: form.isGlobal,
+        fileUrl: form.externalUrl || undefined,
+        textContent: form.textContent || undefined,
+        description: form.description || undefined,
+      });
       toast.success('Resource updated!');
       onRefresh();
       onClose();

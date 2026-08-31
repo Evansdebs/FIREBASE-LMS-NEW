@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Video, Clock, Users, ExternalLink, Calendar, CheckCircle, Loader2, Trash2, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { getLiveClasses, createLiveClass, updateLiveClass, deleteLiveClass } from '@/lib/services/settingsService';
+import { getClasses } from '@/lib/services/academicService';
 import { toast } from 'sonner';
 
 export default function LiveClassesPage() {
@@ -28,32 +29,15 @@ export default function LiveClassesPage() {
   useEffect(() => {
     fetchClasses();
     if (canManage) {
-      api.get(user?.role === 'teacher' ? '/api/teacher/my-courses' : '/api/admin/classes')
-        .then((res: any) => {
-          if (user?.role === 'teacher') {
-            setMyCourses(res);
-            const classesMap = new Map();
-            res.forEach((course: any) => {
-              (course.courseClasses || []).forEach((cc: any) => {
-                if (cc.class) classesMap.set(cc.class.id, cc.class);
-              });
-            });
-            setMyClasses(Array.from(classesMap.values()));
-          } else {
-            setMyClasses(res || []);
-          }
-        }).catch(() => {});
+      getClasses().then(setMyClasses).catch(() => {});
     }
   }, [user]);
 
   const fetchClasses = async () => {
     try {
       setLoading(true);
-      const endpoint = isStudent ? '/api/student/live-classes' :
-                       user?.role === 'teacher' ? '/api/teacher/live-classes' :
-                       '/api/admin/live-classes';
-      const res = await api.get(endpoint);
-      setClasses(Array.isArray(res) ? res : []);
+      const res = await getLiveClasses();
+      setClasses(res);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -75,10 +59,10 @@ export default function LiveClassesPage() {
       };
 
       if (editingId) {
-        await api.put(`/api/teacher/live-classes/${editingId}`, data);
+        await updateLiveClass(String(editingId), data as any);
         toast.success('Live class updated!');
       } else {
-        await api.post('/api/teacher/live-classes', data);
+        await createLiveClass({ ...data, teacherId: user?.id as string, teacherName: user?.fullName as string, duration: Number(data.duration) } as any);
         toast.success('Live class scheduled!');
       }
 
@@ -106,10 +90,10 @@ export default function LiveClassesPage() {
     setShowCreate(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to cancel and delete this live class?')) return;
     try {
-      await api.delete(`/api/teacher/live-classes/${id}`);
+      await deleteLiveClass(id);
       toast.success('Live class cancelled');
       fetchClasses();
     } catch (err: any) {

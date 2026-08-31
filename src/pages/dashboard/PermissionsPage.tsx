@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Shield, Users, CheckCircle, Loader2, Search, Settings2, Save } from 'lucide-react';
-import { api } from '@/lib/api';
+import { getAllUsers, updateUserPermissions } from '@/lib/services/userService';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -71,8 +71,8 @@ export default function PermissionsPage() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/admin/users');
-      setUsers(Array.isArray(res) ? res : res.users || []);
+      const res = await getAllUsers();
+      setUsers(res);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -112,14 +112,13 @@ export default function PermissionsPage() {
     if (!activeUser) return;
     try {
       setSaving(true);
-      const strPermissions = JSON.stringify(userPermissions);
-      await api.put(`/api/admin/users/${activeUser.id}`, { permissions: strPermissions });
+      await updateUserPermissions(activeUser.id, userPermissions);
       toast.success('Permissions updated successfully!');
       
       // Update local state to reflect changes instantly
       setUsers(users.map(u => 
         u.id === activeUser.id 
-          ? { ...u, permissions: strPermissions } 
+          ? { ...u, permissions: userPermissions } 
           : u
       ));
       setActiveUser(null);

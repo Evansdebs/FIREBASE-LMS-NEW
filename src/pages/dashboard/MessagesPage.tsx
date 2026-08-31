@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Send, Search, Circle, Loader2, XCircle, Plus, ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { subscribeToConversation, sendMessage, MessageDoc } from '@/lib/services/messageService';
+import { getAllUsers, UserProfile } from '@/lib/services/userService';
 import { toast } from 'sonner';
 
 export default function MessagesPage() {
@@ -20,77 +21,43 @@ export default function MessagesPage() {
   const [msgLoading, setMsgLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [searching, setSearching] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const ws = useRef<WebSocket | null>(null);
-
-  const selectedConvRef = useRef<string | null>(null);
 
   useEffect(() => {
-    selectedConvRef.current = selectedConv;
-  }, [selectedConv]);
-
-  useEffect(() => {
-    fetchConversations();
-    const token = localStorage.getItem('onereal_token') || localStorage.getItem('token');
-    const apiBase = import.meta.env.VITE_API_URL || '';
-    let wsUrl = '';
-    if (apiBase) {
-      wsUrl = apiBase.replace(/^http/, 'ws') + '/ws';
-    } else {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname === 'localhost' ? 'localhost:5000' : window.location.host;
-      wsUrl = `${protocol}//${host}/ws`;
-    }
-    
-    ws.current = new WebSocket(`${wsUrl}?token=${token}`);
-
-    ws.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'NEW_MESSAGE') {
-        const msg = data.payload;
-        if (selectedConvRef.current === String(msg.senderId) || selectedConvRef.current === String(msg.receiverId)) {
-          setMessages(prev => {
-            if (prev.find(p => p.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
-        }
-        fetchConversations();
-      }
-    };
+    fetchUsersAndConversations();
 
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
 
     return () => {
-      ws.current?.close();
       window.removeEventListener('resize', checkMobile);
     };
-  }, []);
+  }, [user]);
 
-  useEffect(() => {
-    if (selectedConv) {
-      fetchMessages(selectedConv);
-    }
-  }, [selectedConv]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  useEffect(() => {
-    if (showSearch) {
-      handleSearch(searchQuery);
-    }
-  }, [showSearch]);
-
-  const fetchConversations = async () => {
+  const fetchUsersAndConversations = async () => {
     try {
-      const res = await api.get('/api/messages/conversations');
-      setConversations(res);
+      setLoading(true);
+      const users = await getAllUsers();
+      const otherUsers = users.filter(u => u.id !== user?.id);
+      setAllUsers(otherUsers);
+      
+      const convs = otherUsers.map(u => ({
+        partner: {
+          id: u.id,
+          name: u.name || u.fullName,
+          email: u.email,
+          role: u.role,
+          avatar: u.avatar || '',
+        },
+        lastMessage: null,
+        unreadCount: 0,
+      }));
+      setConversations(convs);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -98,49 +65,32 @@ export default function MessagesPage() {
     }
   };
 
-  const fetchMessages = async (userId: string) => {
-    try {
-      setMsgLoading(true);
-      const res = await api.get(`/api/messages/${userId}`);
-      setMessages(res);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
+  useEffect(() => {
+    if (!selectedConv || !user) return;
+    setMsgLoading(true);
+    const unsub = subscribeToConversation(user.id as string, selectedConv, (msgs) => {
+      setMessages(msgs);
       setMsgLoading(false);
-    }
-  };
+    });
+    return unsub;
+  }, [selectedConv, user]);
 
-  const longPressTimer = useRef<any>(null);
-  const isLongPressActive = useRef(false);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-  const handleDeleteMessage = async (messageId: number, senderId: number) => {
-    if (senderId !== user?.id && user?.role !== 'super_admin') {
-      return;
-    }
+  const handleDeleteMessage = async (messageId: string, senderId: string) => {
+    if (senderId !== user?.id && user?.role !== 'super_admin') return;
     if (window.confirm("Delete this message?")) {
       try {
-        await api.delete(`/api/messages/${messageId}`);
+        const { deleteDoc, doc } = await import('firebase/firestore');
+        const { db } = await import('@/lib/firebase');
+        await deleteDoc(doc(db, 'messages', messageId));
         toast.success("Message deleted");
         setMessages(prev => prev.filter(m => m.id !== messageId));
-        fetchConversations();
       } catch (err: any) {
         toast.error(err.message || "Failed to delete message");
       }
-    }
-  };
-
-  const startPress = (messageId: number, senderId: number) => {
-    if (senderId !== user?.id && user?.role !== 'super_admin') return;
-    isLongPressActive.current = false;
-    longPressTimer.current = setTimeout(() => {
-      isLongPressActive.current = true;
-      handleDeleteMessage(messageId, senderId);
-    }, 600);
-  };
-
-  const endPress = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
     }
   };
 
@@ -149,15 +99,17 @@ export default function MessagesPage() {
   );
 
   const handleSend = async () => {
-    if (!newMessage.trim() || !selectedConv) return;
+    if (!newMessage.trim() || !selectedConv || !user) return;
     try {
-      const res = await api.post('/api/messages/send', {
-        receiverId: parseInt(selectedConv),
-        message: newMessage.trim()
+      const partner = conversations.find(c => String(c.partner?.id) === selectedConv)?.partner;
+      await sendMessage({
+        senderId: user.id as string,
+        senderName: user.fullName || user.name,
+        receiverId: selectedConv,
+        receiverName: partner?.name || 'User',
+        message: newMessage.trim(),
       });
-      setMessages(prev => [...prev, res]);
       setNewMessage('');
-      fetchConversations();
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -165,17 +117,17 @@ export default function MessagesPage() {
 
   const currentConv = conversations.find(c => String(c.partner?.id) === selectedConv);
 
-  const handleSearch = async (query: string) => {
+  const handleSearch = (query: string) => {
     setSearchQuery(query);
-    try {
-      setSearching(true);
-      const res = await api.get(`/api/messages/search?query=${encodeURIComponent(query)}`);
-      setSearchResults(res || []);
-    } catch (err) {
-      console.error('Search failed', err);
-    } finally {
-      setSearching(false);
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
     }
+    const filtered = allUsers.filter(u =>
+      (u.name || u.fullName || '').toLowerCase().includes(query.toLowerCase()) ||
+      u.email.toLowerCase().includes(query.toLowerCase())
+    );
+    setSearchResults(filtered);
   };
 
   const startNewChat = (partner: any) => {

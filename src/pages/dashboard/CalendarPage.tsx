@@ -8,7 +8,9 @@ import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock,
   Video, ClipboardList, HelpCircle, ExternalLink, Loader2, Filter, AlertCircle
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { getLiveClasses } from '@/lib/services/settingsService';
+import { getAssignments } from '@/lib/services/assignmentService';
+import { getQuizzes } from '@/lib/services/quizService';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -27,8 +29,53 @@ export default function CalendarPage() {
   const fetchEvents = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/calendar');
-      setEvents(Array.isArray(res) ? res : []);
+      const [liveClasses, assignments, quizzes] = await Promise.all([
+        getLiveClasses(),
+        getAssignments(),
+        getQuizzes()
+      ]);
+
+      const calendarEvents: any[] = [];
+
+      liveClasses.forEach(lc => {
+        calendarEvents.push({
+          id: `live-${lc.id}`,
+          title: lc.title,
+          type: 'live_class',
+          date: lc.scheduleDate,
+          time: lc.scheduleTime,
+          description: `Live class on Google Meet (${lc.duration} mins)`,
+          link: lc.googleMeetLink,
+        });
+      });
+
+      assignments.forEach(a => {
+        if (a.deadline) {
+          calendarEvents.push({
+            id: `assign-${a.id}`,
+            title: `Assignment: ${a.title}`,
+            type: 'assignment',
+            date: a.deadline.split('T')[0],
+            time: a.deadline.includes('T') ? a.deadline.split('T')[1]?.slice(0, 5) : '23:59',
+            description: a.description || 'Assignment submission due',
+          });
+        }
+      });
+
+      quizzes.forEach(q => {
+        if (q.dueDate) {
+          calendarEvents.push({
+            id: `quiz-${q.id}`,
+            title: `Quiz: ${q.title}`,
+            type: 'quiz',
+            date: q.dueDate.split('T')[0],
+            time: q.dueDate.includes('T') ? q.dueDate.split('T')[1]?.slice(0, 5) : '23:59',
+            description: q.instructions || `Quiz duration: ${q.duration} mins`,
+          });
+        }
+      });
+
+      setEvents(calendarEvents);
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch calendar events');
     } finally {

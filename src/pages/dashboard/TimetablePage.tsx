@@ -1,6 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { api } from '@/lib/api';
+import {
+  getClasses, getSubjects, getTimetable,
+  createTimetableEntry, updateTimetableEntry,
+  deleteTimetableEntry, TimetableEntry, ClassDoc, SubjectDoc
+} from '@/lib/services/academicService';
+import { getUsersByRole, UserProfile } from '@/lib/services/userService';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -104,49 +109,43 @@ export default function TimetablePage() {
   const { user } = useAuth();
   const isTeacherOrAdmin = user?.role === 'teacher' || user?.role === 'super_admin';
 
-  // --- COMPONENT STATE ---
-  const [timetable, setTimetable] = useState<any[]>([]);
+  // --- STATE ---
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [configData, setConfigData] = useState<{ classes: any[], teachers: any[] }>({ classes: [], teachers: [] });
   const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [timetable, setTimetable] = useState<any[]>([]);
   const [showWeekends, setShowWeekends] = useState(false);
-  const [currentTime, setCurrentTime] = useState<Date>(new Date());
-
-  // Configuration lists (for modals)
-  const [configData, setConfigData] = useState<{ classes: any[]; teachers: any[] }>({ classes: [], teachers: [] });
 
   // Dialog State
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  // Form Fields — use '__none__' sentinel for the "no teacher" Select option
-  // because Radix UI's Select crashes when given an empty-string value.
+  // Form State
   const [formDay, setFormDay] = useState('MONDAY');
-  const [formSubjectId, setFormSubjectId] = useState('__empty__');
-  const [formTeacherId, setFormTeacherId] = useState('__none__');
+  const [formSubjectId, setFormSubjectId] = useState('');
+  const [formTeacherId, setFormTeacherId] = useState('');
   const [formStartTime, setFormStartTime] = useState('08:00');
   const [formEndTime, setFormEndTime] = useState('09:00');
   const [formRoom, setFormRoom] = useState('');
 
-  // Keep track of current day of week and current time in minutes
+  // Clock
+  const [currentTime, setCurrentTime] = useState(new Date());
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 30000); // update every 30 seconds
+    const timer = setInterval(() => setCurrentTime(new Date()), 30000);
     return () => clearInterval(timer);
   }, []);
 
   const currentDayOfWeekStr = useMemo(() => {
-    const daysArr = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
-    return daysArr[currentTime.getDay()];
+    const map = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    return map[currentTime.getDay()];
   }, [currentTime]);
 
   const currentTimeInMinutes = useMemo(() => {
     return currentTime.getHours() * 60 + currentTime.getMinutes();
   }, [currentTime]);
 
-  // Check if an entry is happening right now
-  const isEntryLive = (entry: any) => {
+  const isCurrentSlot = (entry: any) => {
     if (entry.dayOfWeek !== currentDayOfWeekStr) return false;
     const [startH, startM] = entry.startTime.split(':').map(Number);
     const [endH, endM] = entry.endTime.split(':').map(Number);
@@ -160,20 +159,28 @@ export default function TimetablePage() {
     if (isTeacherOrAdmin) {
       fetchConfig();
     } else {
-      // Student loads their own class timetable
       fetchStudentTimetable();
     }
-  }, [isTeacherOrAdmin]);
+  }, [isTeacherOrAdmin, user]);
 
   const fetchConfig = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/teacher/timetable/config');
-      setConfigData(res);
+      const [classes, subjects, teachers] = await Promise.all([
+        getClasses(),
+        getSubjects(),
+        getUsersByRole('teacher')
+      ]);
+
+      const classesWithSubjects = classes.map(c => ({
+        ...c,
+        subjects: subjects.filter(s => s.classId === c.id)
+      }));
+
+      setConfigData({ classes: classesWithSubjects, teachers });
       
-      // Auto-select first class if available
-      if (res.classes && res.classes.length > 0) {
-        setSelectedClassId(res.classes[0].id.toString());
+      if (classesWithSubjects.length > 0) {
+        setSelectedClassId(classesWithSubjects[0].id.toString());
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to load configuration lists.');
@@ -185,8 +192,12 @@ export default function TimetablePage() {
   const fetchStudentTimetable = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/student/timetable');
-      setTimetable(Array.isArray(res) ? res : []);
+      if (user?.classId) {
+        const res = await getTimetable(user.classId as string);
+        setTimetable(res);
+      } else {
+        setTimetable([]);
+      }
     } catch (err: any) {
       toast.error(err.message || 'Failed to load student timetable.');
     } finally {
@@ -198,8 +209,8 @@ export default function TimetablePage() {
     if (!classId) return;
     try {
       setLoading(true);
-      const res = await api.get(`/api/teacher/timetable?classId=${classId}`);
-      setTimetable(Array.isArray(res) ? res : []);
+      const res = await getTimetable(classId);
+      setTimetable(res);
     } catch (err: any) {
       toast.error(err.message || 'Failed to load timetable entries.');
     } finally {
@@ -238,7 +249,6 @@ export default function TimetablePage() {
       }
     });
 
-    // Sort each day chronologically
     Object.keys(groups).forEach(day => {
       groups[day].sort((a, b) => a.startTime.localeCompare(b.startTime));
     });
@@ -250,8 +260,8 @@ export default function TimetablePage() {
   const handleOpenAddDialog = () => {
     setEditingEntry(null);
     setFormDay('MONDAY');
-    setFormSubjectId(classSubjects[0]?.id?.toString() || '__empty__');
-    setFormTeacherId('__none__');
+    setFormSubjectId(classSubjects[0]?.id || '');
+    setFormTeacherId('');
     setFormStartTime('08:00');
     setFormEndTime('09:00');
     setFormRoom('');
@@ -261,8 +271,8 @@ export default function TimetablePage() {
   const handleOpenEditDialog = (entry: any) => {
     setEditingEntry(entry);
     setFormDay(entry.dayOfWeek);
-    setFormSubjectId(entry.subjectId.toString());
-    setFormTeacherId(entry.teacherId?.toString() || '__none__');
+    setFormSubjectId(entry.subjectId);
+    setFormTeacherId(entry.teacherId || '');
     setFormStartTime(entry.startTime);
     setFormEndTime(entry.endTime);
     setFormRoom(entry.room || '');
@@ -271,45 +281,50 @@ export default function TimetablePage() {
 
   const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formSubjectId || formSubjectId === '__empty__') {
+    if (!formSubjectId) {
       toast.warning('Please select a subject.');
       return;
     }
 
     try {
       setSaving(true);
-      const effectiveTeacherId = formTeacherId && formTeacherId !== '__none__' ? formTeacherId : null;
-      const payload = {
-        classId: parseInt(selectedClassId),
-        subjectId: parseInt(formSubjectId),
-        teacherId: effectiveTeacherId ? parseInt(effectiveTeacherId) : null,
+      const effectiveTeacherId = formTeacherId && formTeacherId !== '__none__' ? formTeacherId : undefined;
+      const subj = classSubjects.find(s => s.id === formSubjectId);
+      const teacher = configData.teachers.find(t => t.id === effectiveTeacherId);
+
+      const payload: any = {
+        classId: selectedClassId,
+        subjectId: formSubjectId,
+        subjectName: subj?.name || '',
+        teacherId: effectiveTeacherId,
+        teacherName: teacher?.fullName || teacher?.name || '',
         dayOfWeek: formDay,
         startTime: formStartTime,
         endTime: formEndTime,
-        room: formRoom || null
+        room: formRoom || undefined
       };
 
       if (editingEntry) {
-        await api.put(`/api/teacher/timetable/${editingEntry.id}`, payload);
+        await updateTimetableEntry(editingEntry.id, payload);
         toast.success('Timetable period updated successfully!');
       } else {
-        await api.post('/api/teacher/timetable', payload);
+        await createTimetableEntry(payload);
         toast.success('Timetable period added successfully!');
       }
 
       setDialogOpen(false);
       fetchClassTimetable(selectedClassId);
     } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message || 'Failed to save timetable slot.');
+      toast.error(err.message || 'Failed to save timetable slot.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteEntry = async (entryId: number) => {
+  const handleDeleteEntry = async (entryId: string) => {
     if (!confirm('Are you sure you want to remove this timetable slot?')) return;
     try {
-      await api.delete(`/api/teacher/timetable/${entryId}`);
+      await deleteTimetableEntry(entryId);
       toast.success('Slot removed successfully.');
       fetchClassTimetable(selectedClassId);
     } catch (err: any) {

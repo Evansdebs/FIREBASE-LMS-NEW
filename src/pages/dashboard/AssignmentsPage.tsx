@@ -10,7 +10,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
-import { api } from '@/lib/api';
+import {
+  getAssignments, getAssignmentById, createAssignment,
+  updateAssignment, deleteAssignment, getSubmissions,
+  createSubmission, gradeSubmission, AssignmentDoc, SubmissionDoc
+} from '@/lib/services/assignmentService';
+import { getCourses, getClasses, CourseDoc } from '@/lib/services/academicService';
 import {
   Plus, Search, FileText, Upload, Download, Clock, CheckCircle, XCircle,
   MessageSquare, Loader2, Trash2, Edit, ListChecks, GripVertical, Globe, EyeOff
@@ -98,33 +103,23 @@ export default function AssignmentsPage() {
 
   const fetchCourses = async () => {
     try {
-      const res = await api.get(isAdmin ? '/api/admin/courses' : '/api/teacher/my-courses');
-      const courseList = Array.isArray(res) ? res : res.courses || [];
+      const [courseList, classList] = await Promise.all([getCourses(), getClasses()]);
       setCourses(courseList);
+      setAvailableClasses(classList);
     } catch (err: any) {
       console.error('Failed to load courses:', err);
     }
   };
 
   const handleCourseChange = (courseId: string) => {
-    const selectedCourse = courses.find(c => c.id.toString() === courseId);
-    setCreatePayload(prev => ({ ...prev, courseId, classIds: [] }));
-    if (selectedCourse) {
-      const classes = selectedCourse.courseClasses?.map((cc: any) => cc.class) || [];
-      setAvailableClasses(classes);
-    } else {
-      setAvailableClasses([]);
-    }
+    setCreatePayload(prev => ({ ...prev, courseId }));
   };
 
   const fetchAssignments = async () => {
     try {
       setLoading(true);
-      let endpoint = isStudent ? '/api/student/assignments' :
-                     isTeacher ? '/api/teacher/assignments' :
-                     '/api/admin/assignments';
-      const res = await api.get(endpoint);
-      setAssignments(Array.isArray(res) ? res : res.assignments || []);
+      const res = await getAssignments();
+      setAssignments(res || []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -134,7 +129,7 @@ export default function AssignmentsPage() {
 
   const filtered = assignments.filter(a => {
     const matchSearch = a.title.toLowerCase().includes(search.toLowerCase());
-    const status = a.submissions?.length > 0 ? (a.submissions[0].grade != null ? 'graded' : 'submitted') : (new Date(a.dueDate) < new Date() ? 'overdue' : 'pending');
+    const status = a.submissions?.length > 0 ? (a.submissions[0].grade != null ? 'graded' : 'submitted') : (new Date(a.deadline) < new Date() ? 'overdue' : 'pending');
     if (statusFilter === 'draft') return matchSearch && !a.isPublished;
     if (statusFilter === 'published') return matchSearch && a.isPublished;
     const matchStatus = statusFilter === 'all' || status === statusFilter;
@@ -155,34 +150,29 @@ export default function AssignmentsPage() {
   const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createPayload.courseId) return toast.error('Please select a course.');
-
-    // Validate rubric
-    if (hasRubric) {
-      const invalid = createPayload.rubric.some(c => !c.name.trim() || c.maxPoints <= 0);
-      if (invalid) return toast.error('Each rubric criterion needs a name and points > 0.');
-    }
+    if (!user) return;
 
     try {
       setSubmitting(true);
-      const formData = new FormData();
-      formData.append('courseId', createPayload.courseId);
-      formData.append('title', createPayload.title);
-      formData.append('description', createPayload.description);
-      formData.append('deadline', createPayload.deadline);
-      formData.append('classIds', JSON.stringify(createPayload.classIds));
-      if (hasRubric) {
-        formData.append('rubric', JSON.stringify(createPayload.rubric));
-        // maxScore derived server-side from rubric sum
-      } else {
-        formData.append('maxScore', createPayload.maxScore);
-      }
-      if (file) formData.append('file', file);
+      const course = courses.find((c: any) => c.id === createPayload.courseId);
+      const payload: any = {
+        title: createPayload.title,
+        description: createPayload.description,
+        courseId: createPayload.courseId,
+        courseTitle: course?.title || '',
+        deadline: createPayload.deadline,
+        maxScore: parseInt(createPayload.maxScore) || 100,
+        classIds: createPayload.classIds,
+        createdBy: user.id as string,
+        createdByName: user.fullName || user.name || 'Teacher',
+        isPublished: true,
+      };
 
       if (editingAssignment) {
-        await api.upload(`/api/teacher/assignments/${editingAssignment.id}`, formData, 'PUT');
+        await updateAssignment(editingAssignment.id, payload);
         toast.success('Assignment updated successfully!');
       } else {
-        await api.upload(isAdmin ? '/api/admin/assignments' : '/api/teacher/assignments', formData);
+        await createAssignment(payload);
         toast.success('Assignment created successfully!');
       }
 
@@ -190,7 +180,6 @@ export default function AssignmentsPage() {
       setEditingAssignment(null);
       setFile(null);
       setCreatePayload({ courseId: '', title: '', description: '', deadline: '', maxScore: '100', classIds: [], rubric: [] });
-      setAvailableClasses([]);
       fetchAssignments();
     } catch (err: any) {
       toast.error(err.message);
@@ -202,17 +191,20 @@ export default function AssignmentsPage() {
   // ─── Student Submission ───────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!showSubmit) return;
-    if (!submitText && !file) return toast.error('Please provide either a text response or a file attachment.');
+    if (!showSubmit || !user) return;
+    if (!submitText.trim()) return toast.error('Please provide a text response or description.');
     try {
       setSubmitting(true);
-      const formData = new FormData();
-      if (file) formData.append('submission', file);
-      formData.append('textContent', submitText);
-      await api.upload(`/api/student/assignments/${showSubmit.id}/submit`, formData);
+      await createSubmission({
+        assignmentId: showSubmit.id,
+        assignmentTitle: showSubmit.title,
+        studentId: user.id as string,
+        studentName: user.fullName || user.name || 'Student',
+        content: submitText,
+      });
       toast.success('Assignment submitted successfully!');
       setShowSubmit(null);
-      setFile(null);
+      setSubmitText('');
       fetchAssignments();
     } catch (err: any) {
       toast.error(err.message);
@@ -226,7 +218,7 @@ export default function AssignmentsPage() {
     setShowSubmissionsFor(assignment);
     setLoadingSubmissions(true);
     try {
-      const data = await api.get(`/api/teacher/assignments/${assignment.id}/submissions`);
+      const data = await getSubmissions(assignment.id);
       setSubmissionsData(data);
     } catch (err: any) {
       toast.error(err.message);
@@ -237,41 +229,20 @@ export default function AssignmentsPage() {
 
   const openGradeDialog = (sub: any) => {
     setGradingSubmission(sub);
-    const criteria = showSubmissionsFor?.rubricCriteria || [];
-    if (criteria.length > 0) {
-      // Pre-fill from existing rubric scores if any
-      const scores: RubricScore[] = criteria.map((c: any) => {
-        const existing = sub.rubricScores?.find((rs: any) => rs.criterionId === c.id);
-        return { criterionId: c.id, points: existing?.points ?? 0 };
-      });
-      setGradingPayload({ grade: '', feedback: sub.feedback || '', rubricScores: scores });
-    } else {
-      setGradingPayload({ grade: sub.grade?.toString() || '', feedback: sub.feedback || '', rubricScores: [] });
-    }
+    setGradingPayload({ grade: sub.grade?.toString() || '', feedback: sub.feedback || '', rubricScores: [] });
   };
 
   const handleSubmitGrade = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!gradingSubmission) return;
-    const criteria = showSubmissionsFor?.rubricCriteria || [];
-    const useRubric = criteria.length > 0;
-
-    if (useRubric) {
-      const total = gradingPayload.rubricScores.reduce((s, rs) => s + rs.points, 0);
-      if (total > showSubmissionsFor.maxScore) {
-        return toast.error(`Total rubric score (${total}) exceeds max score (${showSubmissionsFor.maxScore}).`);
-      }
-    }
 
     try {
       setSubmitting(true);
-      const payload: any = { feedback: gradingPayload.feedback };
-      if (useRubric) {
-        payload.rubricScores = gradingPayload.rubricScores;
-      } else {
-        payload.grade = gradingPayload.grade;
-      }
-      await api.put(`/api/teacher/submissions/${gradingSubmission.id}/grade`, payload);
+      await gradeSubmission(
+        gradingSubmission.id,
+        parseInt(gradingPayload.grade) || 0,
+        gradingPayload.feedback
+      );
       toast.success('Grade submitted successfully');
       setGradingSubmission(null);
       handleViewSubmissions(showSubmissionsFor);
@@ -282,10 +253,10 @@ export default function AssignmentsPage() {
     }
   };
 
-  const handleDeleteAssignment = async (id: number) => {
+  const handleDeleteAssignment = async (id: string) => {
     if (!confirm('Are you sure you want to delete this assignment? All submissions and grades will be lost.')) return;
     try {
-      await api.delete(`/api/teacher/assignments/${id}`);
+      await deleteAssignment(id);
       toast.success('Assignment deleted');
       fetchAssignments();
     } catch (err: any) {

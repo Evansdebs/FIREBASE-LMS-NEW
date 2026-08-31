@@ -23,14 +23,15 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { api } from '@/lib/api';
+import { getNotes, createNote, updateNote, deleteNote, NoteDoc } from '@/lib/services/contentService';
+import { getCourses, CourseDoc } from '@/lib/services/academicService';
 import { TTSButton } from '@/components/ui/TTSButton';
 import { jsPDF } from 'jspdf';
 
 interface Note {
-  id: number;
-  userId: number;
-  courseId: number | null;
+  id: any;
+  userId: any;
+  courseId: any;
   title: string;
   content: string;
   category: string;
@@ -43,13 +44,13 @@ interface Note {
   createdAt: string;
   updatedAt: string;
   course?: {
-    id: number;
+    id: any;
     title: string;
   } | null;
 }
 
 interface Course {
-  id: number;
+  id: any;
   title: string;
 }
 
@@ -79,30 +80,27 @@ const PAPER_STYLES = [
 export default function NotesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const isTeacher = user?.role === 'teacher';
-  const isStudent = user?.role === 'student';
-
   const [notes, setNotes] = useState<Note[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'personal' | 'shared'>('personal');
+  const [activeNotebook, setActiveNotebook] = useState<string>('all');
+  const [activeCourse, setActiveCourse] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // Notebook folders organization
-  const [selectedNotebook, setSelectedNotebook] = useState<string | null>(null);
-  
-  // View Single Note mode
+  const [isLoading, setIsLoading] = useState(true);
   const [viewingNote, setViewingNote] = useState<Note | null>(null);
-  const [viewingFontClass, setViewingFontClass] = useState('font-sans');
-
-  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [viewingFontClass, setViewingFontClass] = useState('font-sans');
+
+  const isTeacher = user?.role === 'teacher';
+  const isStudent = user?.role === 'student';
+  const [activeTab, setActiveTab] = useState<'personal' | 'shared'>('personal');
+  const [selectedNotebook, setSelectedNotebook] = useState<string | null>(null);
+
   const [noteForm, setNoteForm] = useState({
     title: '',
     content: '',
-    category: 'Study',
-    notebook: 'My Notebook',
+    category: 'Lecture Notes',
+    notebook: 'General Study',
     style: 'ruled',
     color: '#fffdf5',
     isShared: false,
@@ -115,10 +113,11 @@ export default function NotesPage() {
   }, [user]);
 
   const fetchNotes = async () => {
+    if (!user) return;
     setIsLoading(true);
     try {
-      const response = await api.get('/api/notes');
-      setNotes(response);
+      const response = await getNotes(user.id as string);
+      setNotes(response as any);
     } catch (error) {
       console.error('Fetch notes error:', error);
       toast({
@@ -133,20 +132,15 @@ export default function NotesPage() {
 
   const fetchCourses = async () => {
     try {
-      let endpoint = '';
-      if (isTeacher) endpoint = '/api/teacher/my-courses';
-      else if (isStudent) endpoint = '/api/student/my-courses';
-      else return;
-
-      const response = await api.get(endpoint);
-      setCourses(Array.isArray(response) ? response : response.courses || []);
+      const response = await getCourses();
+      setCourses(response as any);
     } catch (error) {
       console.error('Fetch courses error:', error);
     }
   };
 
   const handleCreateOrUpdate = async () => {
-    if (!noteForm.title.trim() || !noteForm.content.trim()) {
+    if (!noteForm.title.trim() || !noteForm.content.trim() || !user) {
       toast({
         title: 'Validation Error',
         description: 'Title and content are required.',
@@ -156,18 +150,19 @@ export default function NotesPage() {
     }
 
     try {
-      const payload = {
+      const payload: any = {
         ...noteForm,
-        courseId: noteForm.courseId ? parseInt(noteForm.courseId) : null,
+        userId: user.id as string,
+        courseId: noteForm.courseId || undefined,
       };
 
       if (editingNote) {
-        const response = await api.put(`/api/notes/${editingNote.id}`, payload);
-        setNotes(prev => prev.map(n => n.id === editingNote.id ? response : n));
+        await updateNote(editingNote.id, payload);
+        setNotes(prev => prev.map(n => n.id === editingNote.id ? { ...n, ...payload } : n));
         toast({ title: 'Success', description: 'Notebook page updated successfully.' });
       } else {
-        const response = await api.post('/api/notes', payload);
-        setNotes(prev => [response, ...prev]);
+        const created = await createNote(payload);
+        setNotes(prev => [created as any, ...prev]);
         toast({ title: 'Success', description: 'Notebook page created successfully.' });
       }
       closeModal();
@@ -181,10 +176,10 @@ export default function NotesPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: any) => {
     if (!confirm('Are you sure you want to rip this page out of your notebook permanently?')) return;
     try {
-      await api.delete(`/api/notes/${id}`);
+      await deleteNote(id);
       setNotes(prev => prev.filter(n => n.id !== id));
       toast({ title: 'Success', description: 'Note page discarded successfully.' });
       if (viewingNote?.id === id) setViewingNote(null);
@@ -199,8 +194,10 @@ export default function NotesPage() {
   };
 
   const handleCopyToPersonal = async (note: Note) => {
+    if (!user) return;
     try {
-      const payload = {
+      const payload: any = {
+        userId: user.id as string,
         title: `${note.title} (Copy)`,
         content: note.content,
         category: note.category,
@@ -208,10 +205,10 @@ export default function NotesPage() {
         style: note.style,
         color: note.color,
         isShared: false,
-        courseId: null
+        courseId: undefined
       };
-      const response = await api.post('/api/notes', payload);
-      setNotes(prev => [response, ...prev]);
+      const created = await createNote(payload);
+      setNotes(prev => [created as any, ...prev]);
       toast({
         title: 'Cloned!',
         description: `Successfully added "${note.title}" to your personal notebooks.`,

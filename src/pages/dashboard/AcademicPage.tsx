@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { api } from '@/lib/api';
+import { getClasses, createClass, updateClass, deleteClass, getSubjects, createSubject, updateSubject, deleteSubject } from '@/lib/services/academicService';
 import { Layers, BookOpen, Plus, Trash2, Edit, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -46,7 +46,7 @@ export default function AcademicPage() {
   const fetchClasses = async () => {
     try {
       setLoadingTasks(p => ({ ...p, classes: true }));
-      const res = await api.get('/api/admin/classes');
+      const res = await getClasses();
       setClasses(res);
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch classes');
@@ -58,7 +58,7 @@ export default function AcademicPage() {
   const fetchSubjects = async () => {
     try {
       setLoadingTasks(p => ({ ...p, subjects: true }));
-      const res = await api.get('/api/admin/subjects');
+      const res = await getSubjects();
       setSubjects(res);
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch subjects');
@@ -67,9 +67,9 @@ export default function AcademicPage() {
     }
   };
 
-  const deleteClass = async (id: number) => {
+  const deleteClassHandler = async (id: string) => {
     try {
-      await api.delete(`/api/admin/classes/${id}`);
+      await deleteClass(id);
       toast.success('Class deleted successfully');
       fetchClasses();
       fetchSubjects();
@@ -80,9 +80,9 @@ export default function AcademicPage() {
     }
   };
 
-  const deleteSubject = async (id: number) => {
+  const deleteSubjectHandler = async (id: string) => {
     try {
-      await api.delete(`/api/admin/subjects/${id}`);
+      await deleteSubject(id);
       toast.success('Subject deleted successfully');
       fetchSubjects();
     } catch (err: any) {
@@ -244,7 +244,7 @@ export default function AcademicPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction 
-              onClick={() => itemToDelete?.type === 'class' ? deleteClass(itemToDelete.id) : deleteSubject(itemToDelete!.id)}
+              onClick={() => itemToDelete?.type === 'class' ? deleteClassHandler(itemToDelete.id as any) : deleteSubjectHandler(itemToDelete!.id as any)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete {itemToDelete?.type === 'class' ? 'Class' : 'Subject'}
@@ -264,7 +264,7 @@ function CreateClassForm({ onClose, onRefresh }: { onClose: () => void; onRefres
     e.preventDefault();
     try {
       setLoading(true);
-      await api.post('/api/admin/classes', form);
+      await createClass(form);
       toast.success('Class created');
       onRefresh();
       onClose();
@@ -295,7 +295,7 @@ function CreateSubjectForm({ onClose, onRefresh, classes }: { onClose: () => voi
     e.preventDefault();
     try {
       setLoading(true);
-      await api.post('/api/admin/subjects', form);
+      await createSubject({ ...form, classId: form.classId });
       toast.success('Subject created');
       onRefresh();
       onClose();
@@ -334,7 +334,7 @@ function EditClassForm({ classData, onClose, onRefresh }: { classData: any; onCl
     e.preventDefault();
     try {
       setLoading(true);
-      await api.put(`/api/admin/classes/${classData.id}`, form);
+      await updateClass(classData.id, form);
       toast.success('Class updated');
       onRefresh();
       onClose();
@@ -365,7 +365,7 @@ function EditSubjectForm({ subjectData, classes, onClose, onRefresh }: { subject
     e.preventDefault();
     try {
       setLoading(true);
-      await api.put(`/api/admin/subjects/${subjectData.id}`, form);
+      await updateSubject(subjectData.id, form);
       toast.success('Subject updated');
       onRefresh();
       onClose();

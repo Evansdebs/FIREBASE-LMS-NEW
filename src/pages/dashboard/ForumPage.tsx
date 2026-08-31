@@ -6,7 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { api } from '@/lib/api';
+import {
+  getForumCategories, createForumCategory, getForumThreads,
+  createForumThread, getForumPosts, createForumPost,
+  ForumCategory, ForumThread, ForumPost
+} from '@/lib/services/contentService';
+import { getSubjects } from '@/lib/services/academicService';
 import { MessageSquare, Pin, Lock, Trash2, ArrowLeft, Send, Search, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -46,19 +51,33 @@ export default function ForumPage() {
   const fetchCategories = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/forums/categories');
-      setCategories(res || []);
+      let cats = await getForumCategories();
+      if (cats.length === 0) {
+        // Automatically populate default forum categories from subjects or defaults
+        const subjects = await getSubjects();
+        if (subjects.length > 0) {
+          for (const sub of subjects.slice(0, 5)) {
+            await createForumCategory({ name: `${sub.name} Discussion`, description: `Ask questions and discuss topics related to ${sub.name}`, subjectId: sub.id });
+          }
+          cats = await getForumCategories();
+        } else {
+          await createForumCategory({ name: 'General Discussion', description: 'General community chat, questions, and ideas' });
+          await createForumCategory({ name: 'Homework Help', description: 'Collaborate with fellow students on assignments' });
+          cats = await getForumCategories();
+        }
+      }
+      setCategories(cats || []);
     } catch (err: any) {
-      toast.error('Failed to load subjects');
+      toast.error('Failed to load categories');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchThreads = async (categoryId: number) => {
+  const fetchThreads = async (categoryId: string) => {
     try {
       setLoading(true);
-      const res = await api.get(`/api/forums/categories/${categoryId}/threads`);
+      const res = await getForumThreads(categoryId);
       setThreads(res || []);
     } catch (err: any) {
       toast.error('Failed to load threads');
@@ -67,22 +86,30 @@ export default function ForumPage() {
     }
   };
 
-  const fetchThreadDetails = async (threadId: number) => {
+  const fetchThreadDetails = async (threadId: string) => {
     try {
-      const res = await api.get(`/api/forums/threads/${threadId}`);
-      setSelectedThread(res);
+      const posts = await getForumPosts(threadId);
+      setSelectedThread((prev: any) => ({ ...prev, posts }));
     } catch (err: any) {
-      toast.error('Failed to load thread details');
-      setSelectedThread(null);
+      toast.error('Failed to load posts');
     }
   };
 
   const handleCreateThread = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCategory) return;
+    if (!selectedCategory || !user) return;
     try {
       setSubmitting(true);
-      await api.post(`/api/forums/categories/${selectedCategory.id}/threads`, newThread);
+      await createForumThread({
+        categoryId: selectedCategory.id,
+        categoryName: selectedCategory.name,
+        authorId: user.id as string,
+        authorName: user.fullName || user.name,
+        title: newThread.title,
+        content: newThread.content,
+        isPinned: false,
+        isLocked: false,
+      });
       toast.success('Topic created successfully');
       setShowCreateThread(false);
       setNewThread({ title: '', content: '' });
@@ -96,10 +123,15 @@ export default function ForumPage() {
 
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedThread || !newPost.trim()) return;
+    if (!selectedThread || !newPost.trim() || !user) return;
     try {
       setSubmitting(true);
-      await api.post(`/api/forums/threads/${selectedThread.id}/posts`, { content: newPost });
+      await createForumPost({
+        threadId: selectedThread.id,
+        authorId: user.id as string,
+        authorName: user.fullName || user.name,
+        content: newPost,
+      });
       setNewPost('');
       fetchThreadDetails(selectedThread.id);
     } catch (err: any) {
@@ -109,9 +141,11 @@ export default function ForumPage() {
     }
   };
 
-  const handleModerateThread = async (threadId: number, data: any) => {
+  const handleModerateThread = async (threadId: string, data: any) => {
     try {
-      await api.put(`/api/forums/threads/${threadId}`, data);
+      const { updateDoc, doc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase');
+      await updateDoc(doc(db, 'forum_threads', threadId), data);
       toast.success('Thread updated');
       fetchThreads(selectedCategory.id);
       if (selectedThread?.id === threadId) {
@@ -122,10 +156,12 @@ export default function ForumPage() {
     }
   };
 
-  const handleDeleteThread = async (threadId: number) => {
+  const handleDeleteThread = async (threadId: string) => {
     if (!confirm('Delete this topic? This cannot be undone.')) return;
     try {
-      await api.delete(`/api/forums/threads/${threadId}`);
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase');
+      await deleteDoc(doc(db, 'forum_threads', threadId));
       toast.success('Topic deleted');
       if (selectedThread?.id === threadId) setSelectedThread(null);
       fetchThreads(selectedCategory.id);
@@ -134,10 +170,12 @@ export default function ForumPage() {
     }
   };
 
-  const handleDeletePost = async (postId: number) => {
+  const handleDeletePost = async (postId: string) => {
     if (!confirm('Delete this reply?')) return;
     try {
-      await api.delete(`/api/forums/posts/${postId}`);
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase');
+      await deleteDoc(doc(db, 'forum_posts', postId));
       toast.success('Reply deleted');
       fetchThreadDetails(selectedThread.id);
     } catch (err: any) {

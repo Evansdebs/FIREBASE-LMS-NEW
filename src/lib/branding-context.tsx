@@ -1,13 +1,16 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
+import { db, isFirebaseConfigured } from './firebase';
 import { api } from './api';
 
 interface Settings {
   schoolName: string;
-  logo: string | null;
-  primaryColor: string;
-  secondaryColor: string;
-  lockdownMode: boolean;
+  logo?: string | null;
+  primaryColor?: string;
+  secondaryColor?: string;
+  lockdownMode?: boolean;
   welcomeMessage?: string;
+  schoolCode?: string;
   [key: string]: any;
 }
 
@@ -18,21 +21,18 @@ interface BrandingContextType {
 
 const BrandingContext = createContext<BrandingContextType | null>(null);
 
-export function BrandingProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const ws = useRef<WebSocket | null>(null);
+const DEFAULT_SETTINGS: Settings = {
+  schoolCode: 'ONEREAL2026',
+  schoolName: 'ONEREAL Academy',
+  primaryColor: '#6366f1',
+  secondaryColor: '#4f46e5',
+  lockdownMode: false,
+  welcomeMessage: 'Welcome to ONEREAL LMS',
+};
 
-  const fetchSettings = async () => {
-    try {
-      const data = await api.get('/api/admin/settings/public');
-      setSettings(data);
-    } catch (error) {
-      console.error('Failed to fetch public settings:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+export function BrandingProvider({ children }: { children: React.ReactNode }) {
+  const [settings, setSettings] = useState<Settings | null>(DEFAULT_SETTINGS);
+  const [isLoading, setIsLoading] = useState(true);
 
   const syncStyles = (s: Settings) => {
     if (s.primaryColor) {
@@ -57,48 +57,34 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    fetchSettings();
-
-    // Establish WebSocket connection for real-time synchronization
-    const apiBase = import.meta.env.VITE_API_URL || '';
-    let wsUrl = '';
-    if (apiBase) {
-      wsUrl = apiBase.replace(/^http/, 'ws') + '/ws';
-    } else {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname === 'localhost' ? 'localhost:5000' : window.location.host;
-      wsUrl = `${protocol}//${host}/ws`;
-    }
-    const token = localStorage.getItem('onereal_token');
-    
-    ws.current = new WebSocket(`${wsUrl}${token ? `?token=${token}` : ''}`);
-
-    ws.current.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'SETTINGS_UPDATED') {
-          console.log('Branding sync: settings updated across devices', data.payload);
-          setSettings(data.payload);
+    if (isFirebaseConfigured()) {
+      // Real-time listener directly from Firestore
+      const unsubscribe = onSnapshot(doc(db, 'settings', 'system'), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as Settings;
+          setSettings(data);
+          syncStyles(data);
+        } else {
+          setSettings(DEFAULT_SETTINGS);
         }
-      } catch (e) {
-        // Ignore non-JSON or other message types
-      }
-    };
+        setIsLoading(false);
+      }, (error) => {
+        console.warn('Firestore branding listener error, using defaults:', error);
+        setIsLoading(false);
+      });
 
-    ws.current.onclose = () => {
-      // Simple reconnection logic could go here if needed
-    };
-
-    return () => {
-      ws.current?.close();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (settings) {
-      syncStyles(settings);
+      return () => unsubscribe();
+    } else {
+      // Fallback to REST API if Firebase is not configured
+      api.get('/api/admin/settings/public')
+        .then((data) => {
+          setSettings(data);
+          if (data) syncStyles(data);
+        })
+        .catch(() => setSettings(DEFAULT_SETTINGS))
+        .finally(() => setIsLoading(false));
     }
-  }, [settings]);
+  }, []);
 
   return (
     <BrandingContext.Provider value={{ settings, isLoading }}>

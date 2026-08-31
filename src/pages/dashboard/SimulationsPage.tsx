@@ -13,9 +13,12 @@ import {
   Maximize2, Loader2, Globe, Calculator, 
   Thermometer, Dna, Info, X, Heart, Settings, Activity, MessageCircle
 } from 'lucide-react';
+import {
+  getSimulations, createSimulation, updateSimulation,
+  deleteSimulation, Simulation
+} from '@/lib/services/contentService';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
 const CATEGORIES = [
   'Integrated Science', 'Mathematics', 'Computing/ICT', 'Creative Arts', 'Social Studies',
   'English Language', 'Religious & Moral Education', 'Career Technology', 'Physical Education', 'French'
@@ -68,23 +71,15 @@ export default function SimulationsPage() {
     }
   };
 
-  const handleLaunch = async (sim: any) => {
+  const handleLaunch = (sim: any) => {
     setActiveSim(sim);
-    // Students only
-    if (user?.role === 'student') {
-      try {
-        await api.post(`/api/student/simulations/${sim.id}/access`, {});
-      } catch (err) {
-        console.error('Failed to record simulation access:', err);
-      }
-    }
   };
 
   // Form State
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    category: 'Physics',
+    category: 'Integrated Science',
     iframeUrl: '',
     thumbnail: '',
     isGlobal: true
@@ -97,12 +92,41 @@ export default function SimulationsPage() {
   const fetchSimulations = async () => {
     try {
       setLoading(true);
-      let endpoint = '/api/student/simulations';
-      if (isAdmin) endpoint = '/api/admin/simulations';
-      else if (isTeacher) endpoint = '/api/teacher/simulations';
-      
-      const res = await api.get(endpoint);
-      setSimulations(Array.isArray(res) ? res : []);
+      let res = await getSimulations();
+      if (res.length === 0) {
+        // Seed default educational simulations if none exist
+        const defaultSims = [
+          {
+            title: 'Projectile Motion',
+            description: 'Blast a car out of a cannon and explore physics vectors and drag.',
+            category: 'Integrated Science',
+            iframeUrl: 'https://phet.colorado.edu/sims/html/projectile-motion/latest/projectile-motion_all.html',
+            isGlobal: true,
+            uploadedBy: 'system'
+          },
+          {
+            title: 'Fractions: Intro',
+            description: 'Explore fractions with shapes and numbers.',
+            category: 'Mathematics',
+            iframeUrl: 'https://phet.colorado.edu/sims/html/fractions-intro/latest/fractions-intro_all.html',
+            isGlobal: true,
+            uploadedBy: 'system'
+          },
+          {
+            title: 'Circuit Construction Kit: DC',
+            description: 'Experiment with batteries, resistors, light bulbs, and switches.',
+            category: 'Integrated Science',
+            iframeUrl: 'https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_all.html',
+            isGlobal: true,
+            uploadedBy: 'system'
+          }
+        ];
+        for (const s of defaultSims) {
+          await createSimulation(s);
+        }
+        res = await getSimulations();
+      }
+      setSimulations(res || []);
     } catch (err: any) {
       toast.error('Failed to load simulations');
     } finally {
@@ -113,11 +137,10 @@ export default function SimulationsPage() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const endpoint = '/api/admin/simulations';
-      await api.post(endpoint, formData);
+      await createSimulation({ ...formData, uploadedBy: user?.id as string || 'admin' });
       toast.success('Simulation added to lab');
       setShowAdd(false);
-      setFormData({ title: '', description: '', category: 'Physics', iframeUrl: '', thumbnail: '', isGlobal: true });
+      setFormData({ title: '', description: '', category: 'Integrated Science', iframeUrl: '', thumbnail: '', isGlobal: true });
       fetchSimulations();
     } catch (err: any) {
       toast.error(err.message || 'Failed to add simulation');
@@ -126,9 +149,9 @@ export default function SimulationsPage() {
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingSim) return;
     try {
-      const endpoint = `/api/admin/simulations/${editingSim.id}`;
-      await api.put(endpoint, formData);
+      await updateSimulation(editingSim.id, formData);
       toast.success('Simulation updated');
       setShowEdit(false);
       setEditingSim(null);
@@ -138,11 +161,10 @@ export default function SimulationsPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Remove this simulation from the lab?')) return;
     try {
-      const endpoint = `/api/admin/simulations/${id}`;
-      await api.delete(endpoint);
+      await deleteSimulation(id);
       toast.success('Simulation removed');
       fetchSimulations();
     } catch (err: any) {

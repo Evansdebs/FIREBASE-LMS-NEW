@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, Users, BookOpen, Award, Loader2 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { getAnalyticsStats } from '@/lib/services/dashboardService';
 import { toast } from 'sonner';
 
 export default function AnalyticsPage() {
@@ -20,8 +20,7 @@ export default function AnalyticsPage() {
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
-      const endpoint = isAdmin ? '/api/admin/analytics' : '/api/teacher/analytics';
-      const res = await api.get(endpoint);
+      const res = await getAnalyticsStats();
       setData(res);
     } catch (err: any) {
       toast.error(err.message);

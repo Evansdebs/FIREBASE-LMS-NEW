@@ -10,7 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, Download, TrendingUp, TrendingDown, Minus, Loader2, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { getAllUsers, UserProfile } from '@/lib/services/userService';
+import { getQuizAttempts } from '@/lib/services/quizService';
+import { getSubmissions } from '@/lib/services/assignmentService';
 import { toast } from 'sonner';
 
 export default function GradebookPage() {
@@ -29,9 +31,53 @@ export default function GradebookPage() {
   const fetchGradebook = async () => {
     try {
       setLoading(true);
-      const endpoint = isAdmin ? '/api/admin/gradebook' : '/api/teacher/gradebook';
-      const res = await api.get(endpoint);
-      setGradebook(Array.isArray(res) ? res : []);
+      const [users, attempts, submissions] = await Promise.all([
+        getAllUsers(),
+        getQuizAttempts(),
+        getSubmissions()
+      ]);
+
+      const students = users.filter(u => u.role === 'STUDENT');
+      const rows = students.map(student => {
+        const studentAttempts = attempts.filter(a => a.studentId === student.id);
+        const studentSubs = submissions.filter(s => s.studentId === student.id);
+
+        const avgQuiz = studentAttempts.length
+          ? Math.round(studentAttempts.reduce((s, a) => s + ((a.score / Math.max(a.total, 1)) * 100), 0) / studentAttempts.length)
+          : 0;
+
+        const gradedSubs = studentSubs.filter(s => s.grade != null);
+        const avgAssign = gradedSubs.length
+          ? Math.round(gradedSubs.reduce((s, sub) => s + (sub.grade || 0), 0) / gradedSubs.length)
+          : 0;
+
+        const overall = Math.round((avgQuiz + avgAssign) / (avgQuiz && avgAssign ? 2 : 1)) || 0;
+
+        let letterGrade = 'F';
+        if (overall >= 90) letterGrade = 'A';
+        else if (overall >= 80) letterGrade = 'B';
+        else if (overall >= 70) letterGrade = 'C';
+        else if (overall >= 60) letterGrade = 'D';
+
+        return {
+          studentId: student.id,
+          name: student.name || student.fullName,
+          email: student.email,
+          className: student.className || 'General',
+          classId: student.classId || 'default',
+          quizScore: avgQuiz,
+          assignmentScore: avgAssign,
+          average: overall,
+          grade: letterGrade,
+          trend: overall >= 75 ? 'up' : 'neutral',
+          subjects: [
+            { name: 'Quizzes', score: avgQuiz, grade: letterGrade },
+            { name: 'Assignments', score: avgAssign, grade: letterGrade }
+          ]
+        };
+      });
+
+      setGradebook(rows);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -39,15 +85,19 @@ export default function GradebookPage() {
     }
   };
 
-  const [generatingPdfId, setGeneratingPdfId] = useState<number | null>(null);
+  const [generatingPdfId, setGeneratingPdfId] = useState<any | null>(null);
 
-  const handleDownloadReportCard = async (studentId: number) => {
+  const handleDownloadReportCard = async (studentId: any) => {
     try {
       setGeneratingPdfId(studentId);
-      const endpoint = isAdmin 
-        ? `/api/admin/students/${studentId}/report-card` 
-        : `/api/teacher/students/${studentId}/report-card`;
-      const data = await api.get(endpoint);
+      const studentRow = gradebook.find(g => g.studentId === studentId);
+      const data = {
+        student: { name: studentRow?.name, className: studentRow?.className },
+        subjects: studentRow?.subjects || [],
+        averageScore: studentRow?.average || 0,
+        overallGrade: studentRow?.grade || 'N/A',
+        teacherRemark: 'Good effort, keep striving for excellence!',
+      };
       
       const doc = new jsPDF();
       

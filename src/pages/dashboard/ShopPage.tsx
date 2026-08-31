@@ -9,7 +9,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { api } from '@/lib/api';
+import {
+  getShopItems, createShopItem, updateShopItem,
+  deleteShopItem, ShopItem
+} from '@/lib/services/contentService';
 import {
   ShoppingBag, Plus, Heart, Check, Trash2, Edit, Loader2, Tag,
   Eye, Clock, User, Store, CheckCircle, XCircle, AlertCircle, Phone
@@ -49,44 +52,38 @@ export default function ShopPage() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [pub] = await Promise.all([api.get(`/api/shop?category=${category}`)]);
-      setItems(pub);
+      const all = await getShopItems();
+      const approved = all.filter(i => i.status === 'APPROVED' && (category === 'ALL' || i.category === category));
+      setItems(approved);
       if (isTeacher || isAdmin) {
-        const mine = await api.get('/api/shop/my-items');
+        const mine = all.filter(i => i.createdBy === user?.id);
         setMyItems(mine);
       }
       if (isAdmin) {
-        const pending = await api.get('/api/shop/pending');
+        const pending = all.filter(i => i.status === 'PENDING');
         setPendingItems(pending);
       }
     } catch { toast.error('Failed to load shop.'); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchAll(); }, [category]);
+  useEffect(() => { fetchAll(); }, [category, user]);
 
   const handleInterest = async (item: any) => {
-    try {
-      const res = await api.post(`/api/shop/${item.id}/interest`, {});
-      setItems(prev => prev.map(i => i.id === item.id
-        ? { ...i, hasInterest: res.hasInterest, interestCount: i.interestCount + (res.hasInterest ? 1 : -1) }
-        : i
-      ));
-      toast.success(res.message);
-    } catch { toast.error('Failed to update interest.'); }
+    toast.success(`Contact seller at: ${item.contactPhone || 'Available upon request'}`);
   };
 
-  const handleApprove = async (id: number) => {
+  const handleApprove = async (id: string) => {
     try {
-      await api.put(`/api/shop/${id}/approve`, {});
+      await updateShopItem(id, { status: 'APPROVED' });
       toast.success('Item approved and now visible in the shop!');
       fetchAll();
     } catch { toast.error('Failed to approve.'); }
   };
 
-  const handleReject = async (id: number) => {
+  const handleReject = async (id: string) => {
     try {
-      await api.put(`/api/shop/${id}/reject`, {});
+      await updateShopItem(id, { status: 'REJECTED' });
       toast.success('Item rejected.');
       fetchAll();
     } catch { toast.error('Failed to reject.'); }
@@ -95,7 +92,7 @@ export default function ShopPage() {
   const handleDelete = async () => {
     if (!deleteItem) return;
     try {
-      await api.delete(`/api/shop/${deleteItem.id}`);
+      await deleteShopItem(deleteItem.id);
       toast.success('Item deleted.');
       setDeleteItem(null);
       fetchAll();
@@ -420,10 +417,19 @@ function ShopItemForm({ item, onClose, onSuccess, isAdmin }: {
     try {
       setLoading(true);
       if (item) {
-        await api.put(`/api/shop/${item.id}`, form);
+        await updateShopItem(item.id, {
+          ...form,
+          price: Number(form.price) || 0,
+        });
         toast.success('Item updated!');
       } else {
-        await api.post('/api/shop', form);
+        await createShopItem({
+          ...form,
+          price: Number(form.price) || 0,
+          status: isAdmin ? 'APPROVED' : 'PENDING',
+          createdBy: user?.id as string || 'system',
+          createdByName: user?.fullName || user?.name || 'User',
+        });
         toast.success(isAdmin ? 'Item listed and approved!' : 'Item submitted for approval!');
       }
       onSuccess();

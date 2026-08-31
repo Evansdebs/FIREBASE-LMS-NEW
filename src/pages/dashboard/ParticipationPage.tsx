@@ -6,7 +6,8 @@ import { Progress } from '@/components/ui/progress';
 import { Trophy, Star, Flame, Target, Zap, Award, Medal, Crown, TrendingUp, Loader2, FlaskConical } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useEffect } from 'react';
-import { api } from '@/lib/api';
+import { getAllUsers, getUserById } from '@/lib/services/userService';
+import { getQuizAttempts } from '@/lib/services/quizService';
 import { toast } from 'sonner';
 
 interface Achievement {
@@ -40,14 +41,36 @@ export default function ParticipationPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [statsData, lbData, histData] = await Promise.all([
-        api.get('/api/student/participation/stats'),
-        api.get('/api/student/leaderboard'),
-        api.get('/api/student/participation/history')
+      const [allUsers, attempts] = await Promise.all([
+        getAllUsers(),
+        user ? getQuizAttempts(undefined, user.id as string) : Promise.resolve([])
       ]);
-      setStats(statsData);
-      setLeaderboard(lbData);
-      setHistory(histData);
+
+      // Leaderboard from all students sorted by points
+      const students = allUsers
+        .filter(u => u.role === 'STUDENT')
+        .sort((a, b) => (b.points || 0) - (a.points || 0))
+        .slice(0, 20)
+        .map((u, i) => ({
+          rank: i + 1,
+          userId: u.id,
+          name: u.name || u.fullName,
+          points: u.points || 0,
+          avatar: u.avatar || '',
+          isCurrentUser: u.id === user?.id
+        }));
+      setLeaderboard(students);
+
+      // Stats from user profile + attempts
+      const avgScore = attempts.length
+        ? Math.round(attempts.reduce((s, a) => s + ((a.score / Math.max(a.total, 1)) * 100), 0) / attempts.length)
+        : 0;
+      setStats({
+        totalPoints: user?.points || 0,
+        totalAttempts: attempts.length,
+        avgQuizScore: avgScore,
+      });
+      setHistory(attempts.slice(0, 10));
     } catch (err: any) {
       toast.error(err.message);
     } finally {
