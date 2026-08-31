@@ -21,6 +21,8 @@ import { toast } from 'sonner';
 import { Textarea } from '@/components/ui/textarea';
 import { TTSButton } from '@/components/ui/TTSButton';
 import VideoPlayerModal from '@/components/dashboard/VideoPlayerModal';
+import MediaRecorderModal from '@/components/dashboard/MediaRecorderModal';
+import { Radio, Mic } from 'lucide-react';
 
 export default function ResourceLibraryPage() {
   const { user } = useAuth();
@@ -37,6 +39,7 @@ export default function ResourceLibraryPage() {
   const [starredOnly, setStarredOnly] = useState(false);
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const [showUpload, setShowUpload] = useState(false);
+  const [showRecorder, setShowRecorder] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [activeResource, setActiveResource] = useState<any>(null);
   const [previewResource, setPreviewResource] = useState<any>(null);
@@ -170,17 +173,33 @@ export default function ResourceLibraryPage() {
           </p>
         </div>
         {canManage && (
-          <Dialog open={showUpload} onOpenChange={setShowUpload}>
-            <DialogTrigger asChild>
-              <Button className="gap-2"><Plus className="w-4 h-4" /> Add Resource</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle className="font-heading">Add Resource / Material</DialogTitle></DialogHeader>
-              <UploadResourceForm onClose={() => setShowUpload(false)} onRefresh={fetchMaterials} isAdmin={isAdmin} />
-            </DialogContent>
-          </Dialog>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="gap-2 border-primary/30 text-primary hover:bg-primary/10"
+              onClick={() => setShowRecorder(true)}
+            >
+              <Mic className="w-4 h-4 text-primary" /> Studio Recorder
+            </Button>
+            <Dialog open={showUpload} onOpenChange={setShowUpload}>
+              <DialogTrigger asChild>
+                <Button className="gap-2"><Plus className="w-4 h-4" /> Add Resource</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle className="font-heading">Add Resource / Material</DialogTitle></DialogHeader>
+                <UploadResourceForm onClose={() => setShowUpload(false)} onRefresh={fetchMaterials} isAdmin={isAdmin} />
+              </DialogContent>
+            </Dialog>
+          </div>
         )}
       </div>
+
+      <MediaRecorderModal
+        isOpen={showRecorder}
+        onClose={() => setShowRecorder(false)}
+        onSaved={fetchMaterials}
+        saveMode="material"
+      />
 
       {/* Edit dialog */}
       <Dialog open={showEdit} onOpenChange={setShowEdit}>

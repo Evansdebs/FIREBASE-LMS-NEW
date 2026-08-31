@@ -36,6 +36,7 @@ import ChangePassword from "./pages/auth/ChangePassword";
 import MySubjectPage from "./pages/dashboard/MySubjectPage";
 import SubjectOverviewPage from "./pages/dashboard/SubjectOverviewPage";
 import TimetablePage from "./pages/dashboard/TimetablePage";
+import WhiteboardPage from "./pages/dashboard/WhiteboardPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -65,6 +66,7 @@ const App = () => (
               <Route path="live-classes" element={<LiveClassesPage />} />
               <Route path="calendar" element={<CalendarPage />} />
               <Route path="timetable" element={<TimetablePage />} />
+              <Route path="whiteboard" element={<WhiteboardPage />} />
               <Route path="study-room" element={<StudyRoomPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="messages" element={<MessagesPage />} />

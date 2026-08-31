@@ -24,8 +24,9 @@ import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getNotes, createNote, updateNote, deleteNote, NoteDoc } from '@/lib/services/contentService';
-import { getCourses, CourseDoc } from '@/lib/services/academicService';
 import { TTSButton } from '@/components/ui/TTSButton';
+import MediaRecorderModal from '@/components/dashboard/MediaRecorderModal';
+import { Mic, Radio } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 interface Note {
@@ -95,6 +96,7 @@ export default function NotesPage() {
   const isStudent = user?.role === 'student';
   const [activeTab, setActiveTab] = useState<'personal' | 'shared'>('personal');
   const [selectedNotebook, setSelectedNotebook] = useState<string | null>(null);
+  const [showRecorder, setShowRecorder] = useState(false);
 
   const [noteForm, setNoteForm] = useState({
     title: '',
@@ -347,6 +349,14 @@ export default function NotesPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            className="shadow-sm font-bold gap-2 border-primary/30 text-primary hover:bg-primary/10"
+            onClick={() => setShowRecorder(true)}
+          >
+            <Mic className="w-4 h-4 text-primary" />
+            Record Voice Memo
+          </Button>
           <Button onClick={() => openModal()} className="shadow-lg hover:shadow-primary/20 transition-all font-bold px-5">
             <Plus className="w-5 h-5 mr-2" />
             Write Note Page
@@ -1056,6 +1066,13 @@ export default function NotesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MediaRecorderModal
+        isOpen={showRecorder}
+        onClose={() => setShowRecorder(false)}
+        onSaved={fetchNotes}
+        saveMode="note"
+      />
     </div>
   );
 }

@@ -51,6 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
       { icon: Calendar, label: 'Interactive Calendar', path: '/dashboard/calendar', roles: ['super_admin', 'teacher', 'student'] },
       { icon: Grid, label: 'Weekly Timetable', path: '/dashboard/timetable', roles: ['super_admin', 'teacher', 'student'] },
       { icon: Video, label: 'Live Classes', path: '/dashboard/live-classes', roles: ['super_admin', 'teacher', 'student'] },
+      { icon: Sparkles, label: 'Interactive Whiteboard', path: '/dashboard/whiteboard', roles: ['super_admin', 'teacher', 'student'] },
       { icon: FlaskConical, label: 'Virtual Study Room', path: '/dashboard/study-room', roles: ['super_admin', 'teacher', 'student'] },
       { icon: Sparkles, label: 'AI Tutor', path: '/dashboard/ai-tutor', roles: ['super_admin', 'teacher', 'student'] },
     ]

@@ -26,6 +26,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import MaterialViewer from '@/components/dashboard/MaterialViewer';
 import EditMaterialModal from '@/components/dashboard/EditMaterialModal';
+import MediaRecorderModal from '@/components/dashboard/MediaRecorderModal';
+import { Mic } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -44,6 +46,7 @@ export default function MySubjectPage() {
   // Modals state
   const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
+  const [isRecorderOpen, setIsRecorderOpen] = useState(false);
   const [viewerMaterial, setViewerMaterial] = useState<any | null>(null);
   const [editMaterial, setEditMaterial] = useState<any | null>(null);
 
@@ -368,6 +371,9 @@ export default function MySubjectPage() {
               </div>
 
               <div className="flex flex-wrap gap-2 shrink-0">
+                <Button onClick={() => setIsRecorderOpen(true)} size="sm" variant="outline" className="font-bold gap-1.5 border-primary/30 text-primary hover:bg-primary/10 bg-background/50">
+                  <Mic className="w-4 h-4 text-primary" /> Studio Recorder
+                </Button>
                 <Button onClick={() => setIsModuleModalOpen(true)} size="sm" variant="outline" className="font-bold gap-1.5 border-border hover:bg-muted bg-background/50">
                   <Plus className="w-4 h-4" /> Add Module
                 </Button>
@@ -969,6 +975,14 @@ export default function MySubjectPage() {
         open={!!editMaterial}
         onClose={() => setEditMaterial(null)}
         onSaved={() => { if (selectedCourseId) fetchCourseDetails(selectedCourseId); }}
+      />
+
+      {/* Studio Media Recorder */}
+      <MediaRecorderModal
+        isOpen={isRecorderOpen}
+        onClose={() => setIsRecorderOpen(false)}
+        onSaved={() => { if (selectedCourseId) fetchCourseDetails(selectedCourseId); }}
+        saveMode="material"
       />
     </div>
   );
