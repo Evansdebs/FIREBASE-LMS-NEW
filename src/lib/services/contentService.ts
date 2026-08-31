@@ -62,10 +62,14 @@ export interface NoteDoc {
   updatedAt?: string;
 }
 
-export async function getNotes(userId: string): Promise<NoteDoc[]> {
-  const q = query(collection(db, 'notes'), where('userId', '==', userId));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as NoteDoc));
+export async function getNotes(userId?: string): Promise<NoteDoc[]> {
+  const col = collection(db, 'notes');
+  const snap = await getDocs(col);
+  const notes = snap.docs.map(d => ({ id: d.id, ...d.data() } as NoteDoc));
+  if (userId) {
+    return notes.filter(n => n.userId === userId || n.isShared);
+  }
+  return notes;
 }
 
 export async function createNote(data: Omit<NoteDoc, 'id'>): Promise<NoteDoc> {

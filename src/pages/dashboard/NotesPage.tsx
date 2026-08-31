@@ -24,6 +24,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getNotes, createNote, updateNote, deleteNote, NoteDoc } from '@/lib/services/contentService';
+import { getCourses, CourseDoc } from '@/lib/services/academicService';
 import { TTSButton } from '@/components/ui/TTSButton';
 import MediaRecorderModal from '@/components/dashboard/MediaRecorderModal';
 import { Mic, Radio } from 'lucide-react';
@@ -119,7 +120,11 @@ export default function NotesPage() {
     setIsLoading(true);
     try {
       const response = await getNotes(user.id as string);
-      setNotes(response as any);
+      const mapped = response.map((n: any) => ({
+        ...n,
+        isPersonal: n.userId === user.id && !n.isShared,
+      }));
+      setNotes(mapped);
     } catch (error) {
       console.error('Fetch notes error:', error);
       toast({
