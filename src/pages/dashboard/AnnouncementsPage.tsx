@@ -43,7 +43,7 @@ export default function AnnouncementsPage() {
         message: form.content,
         type: 'ANNOUNCEMENT',
         isGlobal: true,
-        targetRole: form.target !== 'all' ? form.target : undefined,
+        ...(form.target !== 'all' ? { targetRole: form.target } : {}),
       });
       toast.success('Announcement published!');
       setShowCreate(false);

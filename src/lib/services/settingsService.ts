@@ -65,10 +65,13 @@ export async function logAudit(data: {
   action: string;
   details?: string;
 }): Promise<void> {
-  await addDoc(collection(db, 'audit_logs'), {
-    ...data,
-    createdAt: new Date().toISOString()
-  });
+  const cleanLog = Object.fromEntries(
+    Object.entries({
+      ...data,
+      createdAt: new Date().toISOString()
+    }).filter(([_, v]) => v !== undefined)
+  );
+  await addDoc(collection(db, 'audit_logs'), cleanLog);
 }
 
 export async function getAuditLogs(count = 200): Promise<AuditLog[]> {
@@ -89,14 +92,16 @@ export async function deleteAuditLog(id: string): Promise<void> {
 export interface LiveClass {
   id: string;
   title: string;
+  description?: string;
   classId: string;
   className?: string;
   teacherId: string;
   teacherName?: string;
-  googleMeetLink: string;
   scheduleDate: string;
   scheduleTime: string;
-  duration: number;
+  durationMinutes: number;
+  meetingUrl?: string;
+  status: 'SCHEDULED' | 'LIVE' | 'COMPLETED' | 'CANCELLED';
   createdAt?: string;
 }
 
@@ -114,12 +119,18 @@ export async function getLiveClassesForClass(classId: string): Promise<LiveClass
 }
 
 export async function createLiveClass(data: Omit<LiveClass, 'id'>): Promise<LiveClass> {
-  const ref = await addDoc(collection(db, 'live_classes'), { ...data, createdAt: new Date().toISOString() });
+  const clean = Object.fromEntries(
+    Object.entries({ ...data, createdAt: new Date().toISOString() }).filter(([_, v]) => v !== undefined)
+  );
+  const ref = await addDoc(collection(db, 'live_classes'), clean);
   return { id: ref.id, ...data };
 }
 
 export async function updateLiveClass(id: string, data: Partial<LiveClass>): Promise<void> {
-  await updateDoc(doc(db, 'live_classes', id), data);
+  const clean = Object.fromEntries(
+    Object.entries(data).filter(([_, v]) => v !== undefined)
+  );
+  await updateDoc(doc(db, 'live_classes', id), clean);
 }
 
 export async function deleteLiveClass(id: string): Promise<void> {

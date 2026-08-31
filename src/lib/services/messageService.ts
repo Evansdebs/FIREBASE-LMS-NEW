@@ -3,9 +3,9 @@
  * Firestore real-time direct messages and notifications.
  */
 import {
-  collection, doc, getDocs, getDoc, addDoc,
-  updateDoc, query, where, orderBy, onSnapshot,
-  limit, writeBatch
+  collection, doc, getDocs,
+  addDoc, updateDoc, query, where, orderBy, onSnapshot,
+  limit
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -41,6 +41,12 @@ export function subscribeToConversation(
   });
 }
 
+function cleanData<T extends Record<string, any>>(data: T): T {
+  return Object.fromEntries(
+    Object.entries(data).filter(([_, v]) => v !== undefined)
+  ) as T;
+}
+
 export async function sendMessage(data: {
   senderId: string;
   senderName?: string;
@@ -49,15 +55,15 @@ export async function sendMessage(data: {
   message: string;
   type?: 'TEXT' | 'FILE';
 }): Promise<MessageDoc> {
-  const msg: any = {
+  const msg = cleanData({
     ...data,
     type: data.type || 'TEXT',
     isRead: false,
     participants: [data.senderId, data.receiverId],
     createdAt: new Date().toISOString()
-  };
+  });
   const ref = await addDoc(collection(db, 'messages'), msg);
-  return { id: ref.id, ...msg };
+  return { id: ref.id, ...msg } as MessageDoc;
 }
 
 export async function markMessagesAsRead(senderId: string, receiverId: string): Promise<void> {
@@ -68,20 +74,20 @@ export async function markMessagesAsRead(senderId: string, receiverId: string): 
     where('isRead', '==', false)
   );
   const snap = await getDocs(q);
-  const batch = writeBatch(db);
-  snap.docs.forEach(d => batch.update(d.ref, { isRead: true }));
-  await batch.commit();
+  await Promise.all(snap.docs.map(d => updateDoc(d.ref, { isRead: true })));
 }
 
-export async function getConversationUsers(userId: string): Promise<string[]> {
+export async function getConversations(userId: string): Promise<string[]> {
   const q = query(
     collection(db, 'messages'),
-    where('participants', 'array-contains', userId)
+    where('participants', 'array-contains', userId),
+    orderBy('createdAt', 'desc'),
+    limit(100)
   );
   const snap = await getDocs(q);
   const users = new Set<string>();
-  snap.docs.forEach(d => {
-    const msg = d.data() as MessageDoc;
+  snap.docs.forEach(doc => {
+    const msg = doc.data() as MessageDoc;
     if (msg.senderId !== userId) users.add(msg.senderId);
     if (msg.receiverId !== userId) users.add(msg.receiverId);
   });
@@ -127,14 +133,14 @@ export async function createNotification(data: {
   isGlobal?: boolean;
   targetRole?: string;
 }): Promise<NotificationDoc> {
-  const notif: any = {
+  const notif = cleanData({
     ...data,
     isRead: false,
     isGlobal: data.isGlobal ?? false,
     createdAt: new Date().toISOString()
-  };
+  });
   const ref = await addDoc(collection(db, 'notifications'), notif);
-  return { id: ref.id, ...notif };
+  return { id: ref.id, ...notif } as NotificationDoc;
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
