@@ -18,7 +18,8 @@ import {
 import { getCourses, getClasses, CourseDoc } from '@/lib/services/academicService';
 import {
   Plus, Search, FileText, Upload, Download, Clock, CheckCircle, XCircle,
-  MessageSquare, Loader2, Trash2, Edit, ListChecks, GripVertical, Globe, EyeOff
+  MessageSquare, Loader2, Trash2, Edit, ListChecks, GripVertical, Globe, EyeOff,
+  Image, Music, Paperclip, File, X, Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -52,6 +53,9 @@ export default function AssignmentsPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [attachments, setAttachments] = useState<{ name: string; url: string; type: 'image' | 'audio' | 'video' | 'file'; size?: number }[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Create / Edit State
   const [courses, setCourses] = useState<any[]>([]);
@@ -189,10 +193,49 @@ export default function AssignmentsPage() {
   };
 
   // ─── Student Submission ───────────────────────────────
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadingMedia(true);
+    try {
+      const newAtts: { name: string; url: string; type: 'image' | 'audio' | 'video' | 'file'; size: number }[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(f);
+        });
+        let type: 'image' | 'audio' | 'video' | 'file' = 'file';
+        if (f.type.startsWith('image/')) type = 'image';
+        else if (f.type.startsWith('audio/')) type = 'audio';
+        else if (f.type.startsWith('video/')) type = 'video';
+        newAtts.push({
+          name: f.name,
+          url: dataUrl,
+          type,
+          size: f.size
+        });
+      }
+      setAttachments(prev => [...prev, ...newAtts]);
+      toast.success(`${newAtts.length} file(s) attached`);
+    } catch (err: any) {
+      toast.error('Failed to read file: ' + err.message);
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
+  const removeAttachment = (idx: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showSubmit || !user) return;
-    if (!submitText.trim()) return toast.error('Please provide a text response or description.');
+    if (!submitText.trim() && attachments.length === 0) {
+      return toast.error('Please provide a written response or attach media files.');
+    }
     try {
       setSubmitting(true);
       await createSubmission({
@@ -200,11 +243,14 @@ export default function AssignmentsPage() {
         assignmentTitle: showSubmit.title,
         studentId: user.id as string,
         studentName: user.fullName || user.name || 'Student',
-        content: submitText,
+        textContent: submitText.trim(),
+        attachments: attachments,
+        filePath: attachments[0]?.url || '',
       });
       toast.success('Assignment submitted successfully!');
       setShowSubmit(null);
       setSubmitText('');
+      setAttachments([]);
       fetchAssignments();
     } catch (err: any) {
       toast.error(err.message);
@@ -683,20 +729,81 @@ export default function AssignmentsPage() {
                 </div>
               )}
               <div className="space-y-2">
-                <Label>Your Answer / Notes (Optional if attaching file)</Label>
-                <Textarea rows={4} placeholder="Write your response..." value={submitText} onChange={e => setSubmitText(e.target.value)} />
+                <Label className="font-semibold text-foreground">Your Answer / Text Response</Label>
+                <Textarea 
+                  rows={5} 
+                  placeholder="Type your answer, essay, explanation, or working out here..." 
+                  value={submitText} 
+                  onChange={e => setSubmitText(e.target.value)} 
+                  className="font-sans leading-relaxed resize-y"
+                />
+                <p className="text-xs text-muted-foreground">You can type your complete answer directly, or attach images, audio recordings, or documents below.</p>
               </div>
+
               <div className="space-y-2">
-                <Label>Attach Files (Optional if providing text)</Label>
-                <div className={cn("border-2 border-dashed border-border rounded-xl p-4 text-center cursor-pointer hover:border-primary/50 transition-colors", file && "border-primary bg-primary/5")} onClick={() => document.getElementById('file-upload')?.click()}>
-                  <Upload className={cn("w-6 h-6 mx-auto mb-1", file ? "text-primary" : "text-muted-foreground")} />
-                  <p className="text-xs text-muted-foreground">{file ? file.name : 'Drop files or click to browse'}</p>
-                  <input type="file" id="file-upload" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
+                <div className="flex items-center justify-between">
+                  <Label className="font-semibold text-foreground">Attach Media Files (Photos, Audio, Documents)</Label>
+                  <span className="text-xs text-muted-foreground">{attachments.length} attached</span>
                 </div>
+
+                <div 
+                  className={cn(
+                    "border-2 border-dashed border-border rounded-xl p-5 text-center cursor-pointer hover:border-primary/50 transition-all",
+                    uploadingMedia && "opacity-50 pointer-events-none"
+                  )} 
+                  onClick={() => document.getElementById('assignment-files-upload')?.click()}
+                >
+                  <Upload className="w-7 h-7 mx-auto mb-2 text-primary" />
+                  <p className="text-sm font-medium text-foreground">Click or drop photos, audio recordings, or documents</p>
+                  <p className="text-xs text-muted-foreground mt-1">Select one or multiple files (PNG, JPG, MP3, WAV, PDF, DOCX)</p>
+                  <input 
+                    type="file" 
+                    id="assignment-files-upload" 
+                    multiple 
+                    accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.txt" 
+                    className="hidden" 
+                    onChange={e => handleFileUpload(e.target.files)} 
+                  />
+                </div>
+
+                {/* Uploaded attachments preview list */}
+                {attachments.length > 0 && (
+                  <div className="space-y-2 mt-3">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Selected Attachments:</p>
+                    <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+                      {attachments.map((att, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/50 border border-border">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {att.type === 'image' && <Image className="w-4 h-4 text-primary shrink-0" />}
+                            {att.type === 'audio' && <Music className="w-4 h-4 text-accent shrink-0" />}
+                            {att.type === 'file' && <Paperclip className="w-4 h-4 text-info shrink-0" />}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium text-foreground truncate">{att.name}</p>
+                              {att.size && <p className="text-[10px] text-muted-foreground">{(att.size / 1024).toFixed(1)} KB · {att.type.toUpperCase()}</p>}
+                            </div>
+                          </div>
+                          {att.type === 'image' && (
+                            <img src={att.url} alt="preview" className="w-8 h-8 rounded object-cover border border-border shrink-0 mx-2" />
+                          )}
+                          <Button 
+                            type="button" 
+                            size="icon" 
+                            variant="ghost" 
+                            className="h-6 w-6 text-destructive hover:bg-destructive/10" 
+                            onClick={() => removeAttachment(idx)}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => { setShowSubmit(null); setSubmitText(''); }}>Cancel</Button>
-                <Button type="submit" disabled={submitting}>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => { setShowSubmit(null); setSubmitText(''); setAttachments([]); }}>Cancel</Button>
+                <Button type="submit" disabled={submitting || uploadingMedia} className="shadow-lg shadow-primary/20">
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                   {showSubmit?.submissions?.[0] ? 'Update Submission' : 'Submit Assignment'}
                 </Button>
@@ -740,8 +847,8 @@ export default function AssignmentsPage() {
                 <Card key={sub.id} className="border-border">
                   <CardContent className="p-4 flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-foreground">{sub.student?.user?.name || 'Unknown Student'}</h4>
-                      <p className="text-sm text-muted-foreground">{sub.student?.user?.email}</p>
+                      <h4 className="font-semibold text-foreground">{sub.studentName || sub.student?.user?.name || 'Student'}</h4>
+                      <p className="text-sm text-muted-foreground">{sub.student?.user?.email || (sub.studentName ? `${sub.studentName.toLowerCase().replace(/\s+/g, '')}@school.edu` : '')}</p>
                       <div className="flex items-center gap-2 mt-2">
                         {sub.grade !== null && sub.grade !== undefined ? (
                           <Badge variant="outline" className="bg-success/10 text-success border-success/20">
@@ -754,14 +861,76 @@ export default function AssignmentsPage() {
                         )}
                         <span className="text-xs text-muted-foreground">Submitted on {new Date(sub.submittedAt).toLocaleDateString()}</span>
                       </div>
+
+                      {/* Text Answer */}
                       {sub.textContent && (
-                        <div className="mt-3 p-3 bg-muted rounded-md text-sm border border-border">{sub.textContent}</div>
+                        <div className="mt-3 p-3.5 bg-muted/60 rounded-xl text-sm border border-border/80">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                            <FileText className="w-3.5 h-3.5 text-primary" /> Written Answer
+                          </p>
+                          <div className="text-foreground whitespace-pre-wrap leading-relaxed">{sub.textContent}</div>
+                        </div>
                       )}
-                      {sub.filePath && (
-                        <Button variant="link" className="px-0 mt-2 h-auto text-primary font-semibold hover:underline" onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/${sub.filePath}`.replace(/\\/g, '/'), '_blank')}>
-                          View Attachment
+
+                      {/* Multiple Media Attachments Display */}
+                      {sub.attachments && sub.attachments.length > 0 && (
+                        <div className="mt-3 space-y-2 p-3 bg-muted/30 rounded-xl border border-border">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                            <Paperclip className="w-3.5 h-3.5 text-accent" /> Attached Media ({sub.attachments.length})
+                          </p>
+                          <div className="space-y-2">
+                            {sub.attachments.map((att: any, aIdx: number) => (
+                              <div key={aIdx} className="p-2 rounded-lg bg-card border border-border/60">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-medium text-foreground flex items-center gap-1.5 truncate">
+                                    {att.type === 'image' && <Image className="w-3.5 h-3.5 text-primary" />}
+                                    {att.type === 'audio' && <Music className="w-3.5 h-3.5 text-accent" />}
+                                    {att.type === 'file' && <Paperclip className="w-3.5 h-3.5 text-info" />}
+                                    {att.name}
+                                  </span>
+                                  {att.url && (
+                                    <a 
+                                      href={att.url} 
+                                      download={att.name || 'assignment-attachment'} 
+                                      className="text-xs text-primary hover:underline flex items-center gap-1 shrink-0 ml-2"
+                                      target="_blank" 
+                                      rel="noreferrer"
+                                    >
+                                      <Download className="w-3 h-3" /> Download
+                                    </a>
+                                  )}
+                                </div>
+                                {att.type === 'audio' && att.url && (
+                                  <audio controls src={att.url} className="w-full mt-1.5 h-8" />
+                                )}
+                                {att.type === 'image' && att.url && (
+                                  <div className="mt-1.5">
+                                    <img 
+                                      src={att.url} 
+                                      alt={att.name} 
+                                      className="max-h-48 max-w-full rounded-lg border border-border object-contain cursor-pointer hover:opacity-90 transition-opacity" 
+                                      onClick={() => window.open(att.url, '_blank')}
+                                    />
+                                    <p className="text-[10px] text-muted-foreground mt-0.5">Click photo to expand full view</p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Legacy single file path */}
+                      {!sub.attachments?.length && sub.filePath && (
+                        <Button 
+                          variant="link" 
+                          className="px-0 mt-2 h-auto text-primary font-semibold hover:underline flex items-center gap-1" 
+                          onClick={() => window.open(sub.filePath.startsWith('http') || sub.filePath.startsWith('data:') ? sub.filePath : `${import.meta.env.VITE_API_URL || ''}/${sub.filePath}`.replace(/\\/g, '/'), '_blank')}
+                        >
+                          <Paperclip className="w-3.5 h-3.5" /> View Attached File
                         </Button>
                       )}
+
                       {sub.feedback && (
                         <p className="text-sm text-muted-foreground mt-2 italic flex items-center gap-2">
                           <MessageSquare className="w-4 h-4" /> {sub.feedback}
@@ -819,7 +988,7 @@ export default function AssignmentsPage() {
             return (
               <form onSubmit={handleSubmitGrade} className="space-y-5 py-2">
                 <p className="text-sm text-muted-foreground">
-                  Student: <span className="font-semibold text-foreground">{gradingSubmission.student?.user?.name}</span>
+                  Student: <span className="font-semibold text-foreground">{gradingSubmission.studentName || gradingSubmission.student?.user?.name || 'Student'}</span>
                 </p>
 
                 {useRubric ? (

@@ -75,10 +75,10 @@ export default function DashboardLayout() {
         schoolName={settings?.schoolName} 
         logo={settings?.logo} 
       />
-      <div className="flex-1 flex flex-col overflow-auto transition-all duration-300">
+      <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden transition-all duration-300">
         {/* Top bar */}
-        <header className="h-14 border-b border-border flex items-center justify-between px-6 bg-card shrink-0">
-          <div className="flex items-center gap-4">
+        <header className="h-14 border-b border-border flex items-center justify-between px-3 sm:px-6 bg-card shrink-0 gap-2">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             <Button 
               variant="ghost" 
               size="icon" 
@@ -89,25 +89,25 @@ export default function DashboardLayout() {
                   setIsSidebarCollapsed(!isSidebarCollapsed);
                 }
               }}
-              className="h-9 w-9 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+              className="h-9 w-9 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
             >
               {isMobile 
                 ? <Menu className="w-5 h-5" /> 
                 : (isSidebarCollapsed ? <Menu className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />)
               }
             </Button>
-            <div className="animate-in fade-in slide-in-from-left-2 duration-300">
-              <h1 className="font-heading text-base font-bold text-foreground">
+            <div className="animate-in fade-in slide-in-from-left-2 duration-300 truncate">
+              <h1 className="font-heading text-sm sm:text-base font-bold text-foreground truncate">
                 {settings?.schoolName || 'Onereal LMS'}
               </h1>
-              <span className="text-xs text-muted-foreground">{settings?.schoolName ? 'LMS Platform' : 'Intelligence System'}</span>
+              <span className="text-[10px] sm:text-xs text-muted-foreground hidden xs:inline">{settings?.schoolName ? 'LMS Platform' : 'Intelligence System'}</span>
             </div>
           </div>
 
-          <div className="hidden sm:flex items-center gap-6 bg-muted/30 px-6 py-1.5 rounded-full border border-border/50 shadow-sm animate-in fade-in duration-500 mx-4">
+          <div className="hidden md:flex items-center gap-6 bg-muted/30 px-6 py-1.5 rounded-full border border-border/50 shadow-sm animate-in fade-in duration-500 mx-2">
              <div className="flex flex-col items-center">
                 <span className="text-xs font-bold text-foreground">
-                   {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
+                   {currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                 </span>
                 <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
                    Current Date
@@ -124,19 +124,19 @@ export default function DashboardLayout() {
              </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <ModeToggle />
             <NotificationBell />
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
               {settings?.logo ? <img src={settings.logo} className="w-full h-full object-contain" /> : <GraduationCap className="w-5 h-5 text-primary" />}
             </div>
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm ml-2">
-              {user?.fullName.charAt(0)}
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs sm:text-sm ml-1">
+              {user?.fullName?.charAt(0) || 'U'}
             </div>
           </div>
         </header>
-        <main className="flex-1 overflow-auto">
-          <div className="p-6 max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 w-full">
+          <div className="p-3 sm:p-4 md:p-6 max-w-7xl mx-auto w-full min-w-0">
             <Outlet />
           </div>
         </main>

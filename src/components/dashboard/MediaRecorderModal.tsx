@@ -270,16 +270,21 @@ export default function MediaRecorderModal({ isOpen, onClose, onSaved, defaultTo
 
         toast.success(`Voice/Video lesson "${title}" added to curriculum!`);
       } else {
-        // Save as Personal Note
+        // Save as Personal Note with media attachment
         await createNote({
           title: title.trim(),
-          content: `### 🎙️ Recorded ${recordType.toUpperCase()} Note (${formatTime(duration)})\n\n${description.trim()}\n\n[Media Stream Audio/Video Attached]`,
-          userId: user.id as string,
+          content: description.trim() || `Recorded ${recordType} note (${formatTime(duration)})`,
+          userId: String(user.id),
           authorName: user.fullName || user.name || 'Author',
+          category: recordType === 'video' ? 'Video Memo' : 'Voice Memo',
+          notebook: 'Voice & Video Memos',
+          mediaUrl: dataUrl,
+          mediaType: recordType,
+          duration: duration,
           isShared: false,
         });
 
-        toast.success(`Voice memo "${title}" saved to personal notes!`);
+        toast.success(`${recordType === 'video' ? 'Video' : 'Voice'} memo "${title}" saved to personal notes!`);
       }
 
       if (onSaved) onSaved();

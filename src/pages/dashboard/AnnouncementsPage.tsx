@@ -27,29 +27,37 @@ export default function AnnouncementsPage() {
   useEffect(() => {
     if (!user) return;
     setLoading(true);
+    const timeout = setTimeout(() => setLoading(false), 3000);
     const unsub = subscribeToNotifications(user.id as string, user.role as string, (notifs) => {
       setAnnouncements(notifs);
       setLoading(false);
+      clearTimeout(timeout);
     });
-    return unsub;
+    return () => {
+      clearTimeout(timeout);
+      unsub();
+    };
   }, [user]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.title.trim() || !form.content.trim()) return toast.error('Please enter title and message.');
     try {
       setCreating(true);
+      const isTargetAll = form.target === 'all';
       await createNotification({
-        title: form.title,
-        message: form.content,
+        title: form.title.trim(),
+        message: form.content.trim(),
         type: 'ANNOUNCEMENT',
-        isGlobal: true,
-        ...(form.target !== 'all' ? { targetRole: form.target } : {}),
+        isGlobal: isTargetAll,
+        targetRole: isTargetAll ? undefined : form.target,
+        userId: String(user?.id || ''),
       });
-      toast.success('Announcement published!');
+      toast.success('Announcement published successfully!');
       setShowCreate(false);
       setForm({ title: '', content: '', target: 'all' });
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Failed to publish announcement');
     } finally {
       setCreating(false);
     }
@@ -61,6 +69,7 @@ export default function AnnouncementsPage() {
       const { db } = await import('@/lib/firebase');
       await deleteDoc(doc(db, 'notifications', id));
       toast.success('Deleted announcement');
+      setAnnouncements(prev => prev.filter(a => a.id !== id));
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -71,40 +80,49 @@ export default function AnnouncementsPage() {
     (a.message || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const renderAnnouncement = (a: any) => (
-    <Card key={a.id} className={cn('border-border hover:shadow-md transition-all', a.isGlobal && 'ring-1 ring-primary/20 bg-primary/[0.02]')}>
-      <CardContent className="p-5">
-        <div className="flex items-start gap-3">
-          <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center shrink-0', a.isGlobal ? 'bg-primary/10' : 'bg-muted')}>
-            {a.isGlobal ? <Pin className="w-5 h-5 text-primary" /> : <Megaphone className="w-5 h-5 text-muted-foreground" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-heading font-semibold text-card-foreground">{a.title}</h3>
-                  {a.isGlobal && <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px]">Global</Badge>}
-                </div>
-                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                  <span>{a.user?.name || 'Admin'}</span>
-                  <span>·</span>
-                  <span>{new Date(a.createdAt).toLocaleDateString()}</span>
-                </div>
-              </div>
-              {isAdmin && (
-                <div className="flex gap-1 shrink-0">
-                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => deleteAnnouncement(a.id)}>
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              )}
+  const renderAnnouncement = (a: any) => {
+    const isForEveryone = a.isGlobal || !a.targetRole || a.targetRole === 'all';
+    const targetLabel = isForEveryone ? 'Everyone' : a.targetRole.toLowerCase().includes('teacher') ? 'Teachers' : 'Students';
+    
+    return (
+      <Card key={a.id} className={cn('border-border hover:shadow-md transition-all', isForEveryone && 'ring-1 ring-primary/20 bg-primary/[0.02]')}>
+        <CardContent className="p-5">
+          <div className="flex items-start gap-3">
+            <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center shrink-0', isForEveryone ? 'bg-primary/10' : 'bg-muted')}>
+              {isForEveryone ? <Pin className="w-5 h-5 text-primary" /> : <Megaphone className="w-5 h-5 text-muted-foreground" />}
             </div>
-            <p className="text-sm text-muted-foreground mt-3 leading-relaxed whitespace-pre-wrap">{a.message}</p>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-heading font-semibold text-card-foreground">{a.title}</h3>
+                    <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0.5", 
+                      isForEveryone ? "bg-primary/10 text-primary border-primary/20" : "bg-info/10 text-info border-info/20"
+                    )}>
+                      {targetLabel}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground/80">{a.authorName || a.user?.name || 'Administrator'}</span>
+                    <span>·</span>
+                    <span>{new Date(a.createdAt || Date.now()).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                {isAdmin && (
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => deleteAnnouncement(a.id)}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground mt-3 leading-relaxed whitespace-pre-wrap">{a.message}</p>
+            </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="space-y-6">

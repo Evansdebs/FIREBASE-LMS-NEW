@@ -46,17 +46,27 @@ export async function deleteMaterial(id: string): Promise<void> {
   await deleteDoc(doc(db, 'materials', id));
 }
 
+function cleanData<T extends Record<string, any>>(data: T): T {
+  return Object.fromEntries(
+    Object.entries(data).filter(([_, v]) => v !== undefined)
+  ) as T;
+}
+
 /* ─── NOTES ─────────────────────────────────────────────── */
 export interface NoteDoc {
   id: string;
   userId: string;
+  authorName?: string;
   courseId?: string;
   title: string;
   content: string;
-  category: string;
-  notebook: string;
-  style: string;
-  color: string;
+  category?: string;
+  notebook?: string;
+  style?: string;
+  color?: string;
+  mediaUrl?: string;
+  mediaType?: 'audio' | 'video';
+  duration?: number;
   isShared: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -67,19 +77,30 @@ export async function getNotes(userId?: string): Promise<NoteDoc[]> {
   const snap = await getDocs(col);
   const notes = snap.docs.map(d => ({ id: d.id, ...d.data() } as NoteDoc));
   if (userId) {
-    return notes.filter(n => n.userId === userId || n.isShared);
+    const uid = String(userId);
+    return notes.filter(n => String(n.userId) === uid || n.isShared);
   }
   return notes;
 }
 
 export async function createNote(data: Omit<NoteDoc, 'id'>): Promise<NoteDoc> {
   const now = new Date().toISOString();
-  const ref = await addDoc(collection(db, 'notes'), { ...data, createdAt: now, updatedAt: now });
-  return { id: ref.id, ...data };
+  const cleaned = cleanData({
+    ...data,
+    category: data.category || 'General',
+    notebook: data.notebook || 'My Notebook',
+    style: data.style || 'ruled',
+    color: data.color || '#fffdf5',
+    createdAt: now,
+    updatedAt: now
+  });
+  const ref = await addDoc(collection(db, 'notes'), cleaned);
+  return { id: ref.id, ...cleaned } as NoteDoc;
 }
 
 export async function updateNote(id: string, data: Partial<NoteDoc>): Promise<void> {
-  await updateDoc(doc(db, 'notes', id), { ...data, updatedAt: new Date().toISOString() });
+  const cleaned = cleanData({ ...data, updatedAt: new Date().toISOString() });
+  await updateDoc(doc(db, 'notes', id), cleaned);
 }
 
 export async function deleteNote(id: string): Promise<void> {

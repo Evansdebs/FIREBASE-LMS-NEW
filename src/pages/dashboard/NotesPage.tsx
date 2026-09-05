@@ -40,6 +40,9 @@ interface Note {
   notebook: string;
   style: string;
   color: string;
+  mediaUrl?: string;
+  mediaType?: 'audio' | 'video';
+  duration?: number;
   isShared: boolean;
   isPersonal?: boolean;
   teacherName?: string;
@@ -120,9 +123,10 @@ export default function NotesPage() {
     setIsLoading(true);
     try {
       const response = await getNotes(user.id as string);
+      const currentUid = String(user.id);
       const mapped = response.map((n: any) => ({
         ...n,
-        isPersonal: n.userId === user.id && !n.isShared,
+        isPersonal: String(n.userId) === currentUid,
       }));
       setNotes(mapped);
     } catch (error) {
@@ -159,9 +163,11 @@ export default function NotesPage() {
     try {
       const payload: any = {
         ...noteForm,
-        userId: user.id as string,
-        courseId: noteForm.courseId || undefined,
+        userId: String(user.id),
       };
+      if (noteForm.courseId) {
+        payload.courseId = String(noteForm.courseId);
+      }
 
       if (editingNote) {
         await updateNote(editingNote.id, payload);
@@ -169,7 +175,7 @@ export default function NotesPage() {
         toast({ title: 'Success', description: 'Notebook page updated successfully.' });
       } else {
         const created = await createNote(payload);
-        setNotes(prev => [created as any, ...prev]);
+        setNotes(prev => [{ ...(created as any), isPersonal: true }, ...prev]);
         toast({ title: 'Success', description: 'Notebook page created successfully.' });
       }
       closeModal();
@@ -603,8 +609,23 @@ export default function NotesPage() {
                       </div>
                     </div>
 
+                    {/* Audio / Video Media Player if attached */}
+                    {viewingNote.mediaUrl && (
+                      <div className="my-4 p-4 rounded-xl bg-card/80 border border-border shadow-sm">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-primary mb-2">
+                          {viewingNote.mediaType === 'video' ? <Radio className="w-4 h-4 text-primary" /> : <Mic className="w-4 h-4 text-primary" />}
+                          {viewingNote.mediaType === 'video' ? 'Recorded Video Note' : 'Recorded Voice Memo'}
+                        </div>
+                        {viewingNote.mediaType === 'video' ? (
+                          <video controls src={viewingNote.mediaUrl} className="w-full max-h-96 rounded-lg bg-black" />
+                        ) : (
+                          <audio controls src={viewingNote.mediaUrl} className="w-full h-10" />
+                        )}
+                      </div>
+                    )}
+
                     {/* Paper content body */}
-                    <div className={cn("text-base whitespace-pre-wrap leading-relaxed outline-none min-h-[400px]", viewingFontClass)}>
+                    <div className={cn("text-base whitespace-pre-wrap leading-relaxed outline-none min-h-[300px]", viewingFontClass)}>
                       {viewingNote.content}
                     </div>
 

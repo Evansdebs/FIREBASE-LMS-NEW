@@ -107,6 +107,12 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+    width: 100%;
+  }
+
   body {
     @apply bg-background text-foreground transition-colors duration-300;
   }
@@ -119,6 +125,12 @@ All colors MUST be HSL.
   /* Accessibility: Ensure dark backgrounds on hover always have white text */
   .hover-dark:hover {
     @apply bg-primary text-white !important;
+  }
+
+  .responsive-table-container {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 

@@ -400,6 +400,7 @@ function ShopItemCard({ item, onInterest, onEdit, onDelete, showStatus = false, 
 function ShopItemForm({ item, onClose, onSuccess, isAdmin }: {
   item?: any; onClose: () => void; onSuccess: () => void; isAdmin: boolean;
 }) {
+  const { user } = useAuth();
   const [form, setForm] = useState({
     title: item?.title || '',
     description: item?.description || '',

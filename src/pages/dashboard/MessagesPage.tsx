@@ -43,13 +43,14 @@ export default function MessagesPage() {
     try {
       setLoading(true);
       const users = await getAllUsers();
-      const otherUsers = users.filter(u => u.id !== user?.id);
+      const currentUid = String(user?.id || '');
+      const otherUsers = users.filter(u => String(u.id) !== currentUid);
       setAllUsers(otherUsers);
       
       const convs = otherUsers.map(u => ({
         partner: {
-          id: u.id,
-          name: u.name || u.fullName,
+          id: String(u.id),
+          name: u.name || u.fullName || u.email || 'User',
           email: u.email,
           role: u.role,
           avatar: u.avatar || '',
@@ -59,7 +60,7 @@ export default function MessagesPage() {
       }));
       setConversations(convs);
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Failed to load contacts');
     } finally {
       setLoading(false);
     }
@@ -101,17 +102,17 @@ export default function MessagesPage() {
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedConv || !user) return;
     try {
-      const partner = conversations.find(c => String(c.partner?.id) === selectedConv)?.partner;
+      const partner = conversations.find(c => String(c.partner?.id) === String(selectedConv))?.partner;
       await sendMessage({
-        senderId: user.id as string,
-        senderName: user.fullName || user.name,
-        receiverId: selectedConv,
+        senderId: String(user.id),
+        senderName: user.fullName || user.name || 'User',
+        receiverId: String(selectedConv),
         receiverName: partner?.name || 'User',
         message: newMessage.trim(),
       });
       setNewMessage('');
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Failed to send message');
     }
   };
 

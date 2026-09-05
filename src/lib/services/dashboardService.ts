@@ -137,76 +137,147 @@ export async function getStudentDashboardStats(studentId: string, classId?: stri
 
 /* ─── ANALYTICS ───────────────────────────────────────────── */
 export async function getAnalyticsStats() {
-  const [usersSnap, coursesSnap, quizzesSnap, attemptsSnap, classesSnap] = await Promise.all([
+  const [
+    usersSnap,
+    coursesSnap,
+    quizzesSnap,
+    attemptsSnap,
+    classesSnap,
+    assignmentsSnap,
+    submissionsSnap,
+    materialsSnap
+  ] = await Promise.all([
     getDocs(collection(db, 'users')),
     getDocs(collection(db, 'courses')),
     getDocs(collection(db, 'quizzes')),
     getDocs(collection(db, 'quiz_attempts')),
     getDocs(collection(db, 'classes')),
+    getDocs(collection(db, 'assignments')),
+    getDocs(collection(db, 'submissions')),
+    getDocs(collection(db, 'materials')),
   ]);
 
   const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-  const students = users.filter(u => u.role === 'STUDENT');
-  const teachers = users.filter(u => u.role === 'TEACHER');
+  const students = users.filter(u => (u.role || '').toUpperCase().includes('STUDENT'));
+  const teachers = users.filter(u => (u.role || '').toUpperCase().includes('TEACHER'));
   const courses = coursesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
   const quizzes = quizzesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-  const attempts = attemptsSnap.docs.map(d => d.data()) as any[];
+  const attempts = attemptsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+  const assignments = assignmentsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+  const submissions = submissionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+  const materials = materialsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+  const classes = classesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
 
-  // Average score
-  const avgScore = attempts.length
-    ? Math.round(attempts.reduce((sum, a) => sum + ((a.score / Math.max(a.total, 1)) * 100), 0) / attempts.length)
+  // Collect all percentage scores across quizzes and assignments
+  const quizScores: number[] = attempts
+    .filter(a => a.total > 0 && a.score != null)
+    .map(a => Math.round(((a.score || 0) / Math.max(a.total, 1)) * 100));
+
+  const gradedSubmissions = submissions.filter(s => s.grade != null && s.grade !== undefined);
+  const assignmentScores: number[] = gradedSubmissions.map(s => {
+    const asgn = assignments.find(a => a.id === s.assignmentId);
+    const maxScore = asgn?.maxScore || 100;
+    return Math.round(((s.grade || 0) / Math.max(maxScore, 1)) * 100);
+  });
+
+  const allScores = [...quizScores, ...assignmentScores];
+  const avgScore = allScores.length
+    ? Math.round(allScores.reduce((sum, s) => sum + s, 0) / allScores.length)
     : 0;
 
-  // Grade distribution
+  // Real Grade distribution
   const grades = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-  attempts.forEach(a => {
-    const pct = (a.score / Math.max(a.total, 1)) * 100;
-    if (pct >= 90) grades.A++;
-    else if (pct >= 80) grades.B++;
-    else if (pct >= 70) grades.C++;
-    else if (pct >= 60) grades.D++;
+  allScores.forEach(score => {
+    if (score >= 90) grades.A++;
+    else if (score >= 80) grades.B++;
+    else if (score >= 70) grades.C++;
+    else if (score >= 60) grades.D++;
     else grades.F++;
   });
 
   const gradeDistribution = [
-    { name: 'Grade A (90-100%)', value: grades.A || 1, color: '#10b981' },
-    { name: 'Grade B (80-89%)', value: grades.B || 1, color: '#3b82f6' },
-    { name: 'Grade C (70-79%)', value: grades.C || 1, color: '#f59e0b' },
-    { name: 'Grade D (60-69%)', value: grades.D || 1, color: '#f97316' },
-    { name: 'Grade F (<60%)', value: grades.F || 1, color: '#ef4444' },
+    { name: 'Grade A (90-100%)', value: grades.A, color: '#10b981' },
+    { name: 'Grade B (80-89%)', value: grades.B, color: '#3b82f6' },
+    { name: 'Grade C (70-79%)', value: grades.C, color: '#f59e0b' },
+    { name: 'Grade D (60-69%)', value: grades.D, color: '#f97316' },
+    { name: 'Grade F (<60%)', value: grades.F, color: '#ef4444' },
   ];
 
-  // Subject performance
-  const studentPerformance = courses.slice(0, 6).map(c => ({
-    subject: c.title || 'Course',
-    score: Math.floor(Math.random() * 20) + 75,
-  }));
-  if (studentPerformance.length === 0) {
-    studentPerformance.push({ subject: 'Mathematics', score: 85 }, { subject: 'English', score: 90 }, { subject: 'Science', score: 78 });
+  // Real Subject performance (real scores aggregated per course/subject)
+  const studentPerformance = courses.slice(0, 8).map(c => {
+    const courseQuizzes = quizzes.filter(q => q.courseId === c.id);
+    const quizIds = new Set(courseQuizzes.map(q => q.id));
+    const courseAttempts = attempts.filter(a => quizIds.has(a.quizId));
+
+    const courseAssignments = assignments.filter(a => a.courseId === c.id);
+    const asgnIds = new Set(courseAssignments.map(a => a.id));
+    const courseSubmissions = submissions.filter(s => asgnIds.has(s.assignmentId) && s.grade != null);
+
+    const scores: number[] = [
+      ...courseAttempts.map(a => ((a.score || 0) / Math.max(a.total || 1, 1)) * 100),
+      ...courseSubmissions.map(s => {
+        const asgn = courseAssignments.find(a => a.id === s.assignmentId);
+        return ((s.grade || 0) / Math.max(asgn?.maxScore || 100, 1)) * 100;
+      })
+    ];
+
+    const courseAvg = scores.length
+      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+      : 0;
+
+    return {
+      subject: c.title || 'Subject',
+      score: courseAvg,
+      assessments: scores.length
+    };
+  });
+
+  // Real Enrollment Trend based on student creation dates
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const now = new Date();
+  const enrollmentTrend = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mName = months[d.getMonth()];
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59).toISOString();
+    const count = students.filter(s => !s.createdAt || s.createdAt <= endOfMonth).length;
+    enrollmentTrend.push({
+      month: mName,
+      students: count
+    });
   }
 
-  // Enrollment trend
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const curMonth = new Date().getMonth();
-  const enrollmentTrend = months.slice(Math.max(0, curMonth - 5), curMonth + 1).map((m, i) => ({
-    month: m,
-    students: Math.max(students.length - (5 - i) * 2, 1),
-  }));
+  // Real Completion Rate (completed vs total student assessments)
+  const totalTasks = assignments.length + quizzes.length;
+  const activeStudentsCount = Math.max(students.length, 1);
+  const totalExpected = totalTasks * activeStudentsCount;
+  const totalCompleted = submissions.length + attempts.length;
+  const completionRatePct = totalExpected > 0 
+    ? Math.min(100, Math.round((totalCompleted / totalExpected) * 100))
+    : 0;
 
-  // Teacher activity
-  const teacherActivity = teachers.map(t => ({
-    name: t.name || t.fullName || 'Teacher',
-    classes: classesSnap.size || 1,
-    quizzes: quizzes.filter(q => q.createdBy === t.id).length,
-    lessons: 0,
-  }));
+  // Real Teacher activity
+  const teacherActivity = teachers.map(t => {
+    const tId = String(t.id);
+    const teacherClasses = classes.filter(c => String(c.teacherId || '') === tId);
+    const teacherQuizzes = quizzes.filter(q => String(q.createdBy || '') === tId);
+    const teacherMaterials = materials.filter(m => String(m.uploadedBy || '') === tId);
+    const teacherAssignments = assignments.filter(a => String(a.createdBy || '') === tId);
+
+    return {
+      name: t.name || t.fullName || 'Teacher',
+      classes: teacherClasses.length || (classes.length > 0 ? 1 : 0),
+      quizzes: teacherQuizzes.length,
+      lessons: teacherMaterials.length + teacherAssignments.length,
+    };
+  });
 
   return {
     statCards: {
       totalEnrollments: students.length,
       coursesActive: courses.length,
       avgGrade: `${avgScore}%`,
-      completionRate: '92%',
+      completionRate: `${completionRatePct}%`,
     },
     studentPerformance,
     enrollmentTrend,

@@ -61,7 +61,20 @@ export async function deleteAssignment(id: string): Promise<void> {
   await deleteDoc(doc(db, 'assignments', id));
 }
 
+function cleanData<T extends Record<string, any>>(data: T): T {
+  return Object.fromEntries(
+    Object.entries(data).filter(([_, v]) => v !== undefined)
+  ) as T;
+}
+
 /* ─── SUBMISSIONS ─────────────────────────────────────────── */
+export interface SubmissionAttachment {
+  name: string;
+  url: string;
+  type: 'image' | 'audio' | 'video' | 'file';
+  size?: number;
+}
+
 export interface SubmissionDoc {
   id: string;
   assignmentId: string;
@@ -70,6 +83,8 @@ export interface SubmissionDoc {
   studentName?: string;
   textContent?: string;
   filePath?: string;
+  filePaths?: string[];
+  attachments?: SubmissionAttachment[];
   submittedAt: string;
   grade?: number;
   feedback?: string;
@@ -99,20 +114,22 @@ export async function getSubmissionByStudentAndAssignment(assignmentId: string, 
 }
 
 export async function createSubmission(data: Omit<SubmissionDoc, 'id'>): Promise<SubmissionDoc> {
-  const ref = await addDoc(collection(db, 'submissions'), {
+  const cleaned = cleanData({
     ...data,
     status: 'SUBMITTED',
     submittedAt: new Date().toISOString()
   });
+  const ref = await addDoc(collection(db, 'submissions'), cleaned);
   return { id: ref.id, ...data };
 }
 
 export async function gradeSubmission(id: string, grade: number, feedback?: string, rubricScores?: any[]): Promise<void> {
-  await updateDoc(doc(db, 'submissions', id), {
+  const updateData = cleanData({
     grade,
-    feedback,
-    rubricScores,
+    feedback: feedback || '',
+    rubricScores: rubricScores || [],
     status: 'GRADED',
     gradedAt: new Date().toISOString()
   });
+  await updateDoc(doc(db, 'submissions', id), updateData);
 }

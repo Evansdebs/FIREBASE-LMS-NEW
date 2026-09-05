@@ -129,21 +129,35 @@ export default function PermissionsPage() {
     }
   };
 
-  // Only show teachers and admins, not students
-  const staffUsers = users.filter((u: any) => u.role === 'TEACHER' || u.role === 'SUPER_ADMIN' || u.role === 'ADMIN');
-  
-  const filtered = staffUsers.filter(u => {
-    const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) || 
-                        u.email.toLowerCase().includes(search.toLowerCase());
-    const matchRole = roleFilter === 'all' || u.role.toLowerCase() === roleFilter.toLowerCase();
+  // Show all users: super_admin, teacher, student
+  const filtered = users.filter(u => {
+    const name = (u.name || u.fullName || '').toLowerCase();
+    const email = (u.email || '').toLowerCase();
+    const matchSearch = name.includes(search.toLowerCase()) || email.includes(search.toLowerCase());
+    const r = (u.role || '').toLowerCase();
+    const matchRole = roleFilter === 'all' || 
+      (roleFilter === 'super_admin' && r.includes('admin')) ||
+      (roleFilter === 'teacher' && r.includes('teacher')) ||
+      (roleFilter === 'student' && r.includes('student'));
     return matchSearch && matchRole;
   });
+
+  const getRoleBadge = (rawRole: string) => {
+    const r = (rawRole || '').toLowerCase();
+    if (r.includes('admin')) {
+      return <Badge variant="outline" className="font-semibold bg-primary/10 text-primary border-primary/20">Admin</Badge>;
+    }
+    if (r.includes('teacher')) {
+      return <Badge variant="outline" className="font-semibold bg-info/10 text-info border-info/20">Teacher</Badge>;
+    }
+    return <Badge variant="outline" className="font-semibold bg-muted text-muted-foreground border-border">Student</Badge>;
+  };
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">Roles & Permissions</h1>
-        <p className="text-muted-foreground mt-1">Manage fine-grained access control for staff and administrative users.</p>
+        <p className="text-muted-foreground mt-1">Manage fine-grained access control and module permissions for all accounts.</p>
       </div>
 
       <Card className="border-border">
@@ -152,7 +166,7 @@ export default function PermissionsPage() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search staff members..."
+                placeholder="Search any user by name or email..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="pl-9"
@@ -161,9 +175,10 @@ export default function PermissionsPage() {
             <Select value={roleFilter} onValueChange={setRoleFilter}>
               <SelectTrigger className="w-[180px]"><SelectValue placeholder="Filter by Role" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="all">All Users ({users.length})</SelectItem>
                 <SelectItem value="super_admin">Admins</SelectItem>
                 <SelectItem value="teacher">Teachers</SelectItem>
+                <SelectItem value="student">Students</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -178,7 +193,7 @@ export default function PermissionsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Staff Member</th>
+                  <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">User</th>
                   <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Role</th>
                   <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Custom Access</th>
                   <th className="text-right text-xs font-semibold text-muted-foreground px-4 py-3">Actions</th>
@@ -186,8 +201,9 @@ export default function PermissionsPage() {
               </thead>
               <tbody>
                 {filtered.map(u => {
-                  const roleLabel = u.role === 'SUPER_ADMIN' ? 'Admin' : 'Teacher';
-                  const isSuperAdmin = u.role === 'SUPER_ADMIN';
+                  const r = (u.role || '').toLowerCase();
+                  const isSuperAdmin = r.includes('admin');
+                  const isTeacher = r.includes('teacher');
                   
                   // Parse permissions to check if any exist
                   let hasCustom = false;
@@ -203,19 +219,17 @@ export default function PermissionsPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className={cn("w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs", 
-                            isSuperAdmin ? "bg-primary/10 text-primary" : "bg-info/10 text-info")}>
-                            {u.name.charAt(0)}
+                            isSuperAdmin ? "bg-primary/10 text-primary" : isTeacher ? "bg-info/10 text-info" : "bg-muted text-muted-foreground")}>
+                            {(u.name || u.fullName || u.email || 'U').charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-foreground">{u.name}</p>
+                            <p className="text-sm font-medium text-foreground">{u.name || u.fullName || 'User'}</p>
                             <p className="text-xs text-muted-foreground">{u.email}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant="outline" className={cn('font-medium', isSuperAdmin ? 'bg-primary/10 text-primary border-primary/20' : 'bg-info/10 text-info border-info/20')}>
-                          {roleLabel}
-                        </Badge>
+                        {getRoleBadge(u.role)}
                       </td>
                       <td className="px-4 py-3">
                         {isSuperAdmin ? (

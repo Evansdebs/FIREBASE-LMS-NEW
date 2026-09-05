@@ -6,7 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import {
   Play, Pause, RotateCcw, Volume2, Music, Sparkles, Award, Clock,
   Sunset, Compass, CloudRain, Flame, HelpCircle, CheckCircle, VolumeX,
-  Waves, Disc
+  Waves, Disc, Wind, Trees, Bell
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -32,7 +32,8 @@ export default function StudyRoomPage() {
   const [bgTheme, setBgTheme] = useState<'sunset' | 'space' | 'rain'>('sunset');
 
   // Meditative sound settings
-  const [soundType, setSoundType] = useState<'none' | 'binaural' | 'waves' | 'bowl'>('none');
+  type SoundOption = 'none' | 'binaural' | 'waves' | 'bowl' | 'rain' | 'campfire' | 'brownnoise' | 'forest' | 'clock' | 'chimes';
+  const [soundType, setSoundType] = useState<SoundOption>('none');
   const [volume, setVolume] = useState(0.4);
 
   // Confetti celebration state
@@ -255,7 +256,7 @@ export default function StudyRoomPage() {
 
       // 3. Tibetan Singing Bowls (Detuned resonance with organic gain swells) -> Deep meditation
       if (soundType === 'bowl') {
-        const frequencies = [144, 288.4, 432.2, 576.8]; // Pure resonance scale (Golden ratio)
+        const frequencies = [144, 288.4, 432.2, 576.8];
         const gains = [0.45, 0.28, 0.16, 0.08];
         const lfoSpeeds = [0.11, 0.07, 0.14, 0.06];
 
@@ -267,7 +268,6 @@ export default function StudyRoomPage() {
           const bowlGain = ctx.createGain();
           bowlGain.gain.value = gains[idx];
 
-          // Slow slow tremolo sweep
           const lfo = ctx.createOscillator();
           lfo.type = 'sine';
           lfo.frequency.value = lfoSpeeds[idx];
@@ -286,6 +286,191 @@ export default function StudyRoomPage() {
 
           activeNodesRef.current.push(osc, lfo);
         });
+      }
+
+      // 4. Gentle Rainfall (Filtered Pink Noise with Soft Water Droplets)
+      if (soundType === 'rain') {
+        const bufferSize = 2 * ctx.sampleRate;
+        const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        let b0 = 0, b1 = 0, b2 = 0;
+        for (let i = 0; i < bufferSize; i++) {
+          const white = Math.random() * 2 - 1;
+          b0 = 0.99 * b0 + white * 0.05;
+          b1 = 0.95 * b1 + white * 0.1;
+          b2 = 0.85 * b2 + white * 0.2;
+          output[i] = (b0 + b1 + b2) * 0.2;
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBuffer;
+        noise.loop = true;
+
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 2400;
+
+        const hp = ctx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 400;
+
+        noise.connect(lp);
+        lp.connect(hp);
+        hp.connect(mainGain);
+        noise.start();
+        activeNodesRef.current.push(noise);
+      }
+
+      // 5. Campfire & Hearth (Warm Brown Noise with Crackle Impulses)
+      if (soundType === 'campfire') {
+        const bufferSize = 2 * ctx.sampleRate;
+        const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        let lastOut = 0.0;
+        for (let i = 0; i < bufferSize; i++) {
+          const white = Math.random() * 2 - 1;
+          output[i] = (lastOut + (0.02 * white)) / 1.02;
+          lastOut = output[i];
+          output[i] *= 1.8;
+          // Random spark crackle
+          if (Math.random() < 0.0003) {
+            output[i] += (Math.random() > 0.5 ? 0.8 : -0.8);
+          }
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBuffer;
+        noise.loop = true;
+
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 750;
+
+        noise.connect(lp);
+        lp.connect(mainGain);
+        noise.start();
+        activeNodesRef.current.push(noise);
+      }
+
+      // 6. Deep Brown Noise (Pure Low-Frequency Masking for Intense Focus)
+      if (soundType === 'brownnoise') {
+        const bufferSize = 2 * ctx.sampleRate;
+        const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        let last = 0.0;
+        for (let i = 0; i < bufferSize; i++) {
+          const white = Math.random() * 2 - 1;
+          output[i] = (last + (0.02 * white)) / 1.02;
+          last = output[i];
+          output[i] *= 2.2;
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBuffer;
+        noise.loop = true;
+
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 450;
+
+        noise.connect(lp);
+        lp.connect(mainGain);
+        noise.start();
+        activeNodesRef.current.push(noise);
+      }
+
+      // 7. Night Forest & Crickets (Breeze + Rhythmic Cricket Chirps)
+      if (soundType === 'forest') {
+        const bufferSize = 2 * ctx.sampleRate;
+        const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          output[i] = (Math.random() * 2 - 1) * 0.04;
+        }
+        const breeze = ctx.createBufferSource();
+        breeze.buffer = noiseBuffer;
+        breeze.loop = true;
+
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 900;
+        bp.Q.value = 1.0;
+
+        breeze.connect(bp);
+        bp.connect(mainGain);
+        breeze.start();
+        activeNodesRef.current.push(breeze);
+
+        // Crickets oscillator
+        const cricket = ctx.createOscillator();
+        cricket.type = 'sine';
+        cricket.frequency.value = 4800;
+
+        const cricketGain = ctx.createGain();
+        cricketGain.gain.value = 0.04;
+
+        const cricketLfo = ctx.createOscillator();
+        cricketLfo.type = 'square';
+        cricketLfo.frequency.value = 7.5; // Chirp rhythm
+
+        const cLfoGain = ctx.createGain();
+        cLfoGain.gain.value = 0.04;
+
+        cricketLfo.connect(cLfoGain);
+        cLfoGain.connect(cricketGain.gain);
+
+        cricket.connect(cricketGain);
+        cricketGain.connect(mainGain);
+
+        cricket.start();
+        cricketLfo.start();
+        activeNodesRef.current.push(cricket, cricketLfo);
+      }
+
+      // 8. Rhythmic Clock Ticking (Heartbeat / Pace Cadence)
+      if (soundType === 'clock') {
+        const tickInterval = setInterval(() => {
+          if (!audioContextRef.current || soundType !== 'clock') {
+            clearInterval(tickInterval);
+            return;
+          }
+          const now = audioContextRef.current.currentTime;
+          const osc = audioContextRef.current.createOscillator();
+          const gain = audioContextRef.current.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(1100, now);
+          osc.frequency.exponentialRampToValueAtTime(300, now + 0.04);
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+          osc.connect(gain);
+          gain.connect(mainGainRef.current || audioContextRef.current.destination);
+          osc.start(now);
+          osc.stop(now + 0.05);
+        }, 1000);
+
+        activeNodesRef.current.push({ stop: () => clearInterval(tickInterval) });
+      }
+
+      // 9. Ambient Wind Chimes (Gentle Pentatonic Resonant Tones)
+      if (soundType === 'chimes') {
+        const chimeNotes = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
+        const chimeInterval = setInterval(() => {
+          if (!audioContextRef.current || soundType !== 'chimes') {
+            clearInterval(chimeInterval);
+            return;
+          }
+          const now = audioContextRef.current.currentTime;
+          const note = chimeNotes[Math.floor(Math.random() * chimeNotes.length)];
+          const osc = audioContextRef.current.createOscillator();
+          const gain = audioContextRef.current.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(note, now);
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.2);
+          osc.connect(gain);
+          gain.connect(mainGainRef.current || audioContextRef.current.destination);
+          osc.start(now);
+          osc.stop(now + 2.3);
+        }, 2200);
+
+        activeNodesRef.current.push({ stop: () => clearInterval(chimeInterval) });
       }
 
     } catch (err) {
@@ -638,64 +823,44 @@ export default function StudyRoomPage() {
                 <Music className="w-3.5 h-3.5 text-primary" /> Meditative Ambient Sounds
               </h3>
               
-              {/* White noise channels toggles */}
-              <div className="space-y-2">
-                <button
-                  onClick={() => handleSoundToggle('binaural')}
-                  className={cn(
-                    "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left",
-                    soundType === 'binaural'
-                      ? "bg-rose-500/10 border-rose-500/30 text-rose-300 shadow-sm"
-                      : "bg-background/30 border-transparent text-zinc-400 hover:bg-background/80"
-                  )}
-                >
-                  <span className="flex items-center gap-2 text-xs font-bold">
-                    <Disc className="w-4 h-4 text-rose-400 animate-spin" style={{ animationDuration: '6s' }} /> Binaural Theta Beats
-                  </span>
-                  <Badge variant="outline" className={cn("text-[9px] border px-1.5",
-                    soundType === 'binaural' ? "border-rose-500/30 text-rose-400" : "border-zinc-800 text-zinc-500"
-                  )}>
-                    {soundType === 'binaural' ? 'ACTIVE' : 'MUTED'}
-                  </Badge>
-                </button>
-
-                <button
-                  onClick={() => handleSoundToggle('waves')}
-                  className={cn(
-                    "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left",
-                    soundType === 'waves'
-                      ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300 shadow-sm"
-                      : "bg-background/30 border-transparent text-zinc-400 hover:bg-background/80"
-                  )}
-                >
-                  <span className="flex items-center gap-2 text-xs font-bold">
-                    <Waves className="w-4 h-4 text-cyan-400 animate-pulse" /> Zen Ocean Swells
-                  </span>
-                  <Badge variant="outline" className={cn("text-[9px] border px-1.5",
-                    soundType === 'waves' ? "border-cyan-500/30 text-cyan-400" : "border-zinc-800 text-zinc-500"
-                  )}>
-                    {soundType === 'waves' ? 'ACTIVE' : 'MUTED'}
-                  </Badge>
-                </button>
-
-                <button
-                  onClick={() => handleSoundToggle('bowl')}
-                  className={cn(
-                    "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left",
-                    soundType === 'bowl'
-                      ? "bg-amber-500/10 border-amber-500/30 text-amber-300 shadow-sm"
-                      : "bg-background/30 border-transparent text-zinc-400 hover:bg-background/80"
-                  )}
-                >
-                  <span className="flex items-center gap-2 text-xs font-bold">
-                    <Sparkles className="w-4 h-4 text-amber-400 animate-bounce" style={{ animationDuration: '3s' }} /> Tibetan Singing Bowl
-                  </span>
-                  <Badge variant="outline" className={cn("text-[9px] border px-1.5",
-                    soundType === 'bowl' ? "border-amber-500/30 text-amber-400" : "border-zinc-800 text-zinc-500"
-                  )}>
-                    {soundType === 'bowl' ? 'ACTIVE' : 'MUTED'}
-                  </Badge>
-                </button>
+              {/* Sound selector scrollable list with all 9 ambient sounds */}
+              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+                {[
+                  { id: 'binaural', label: 'Binaural Theta Beats', icon: Disc, color: 'text-rose-400', border: 'border-rose-500/30 bg-rose-500/10 text-rose-300' },
+                  { id: 'waves', label: 'Zen Ocean Swells', icon: Waves, color: 'text-cyan-400', border: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300' },
+                  { id: 'bowl', label: 'Tibetan Singing Bowl', icon: Sparkles, color: 'text-amber-400', border: 'border-amber-500/30 bg-amber-500/10 text-amber-300' },
+                  { id: 'rain', label: 'Gentle Rainfall', icon: CloudRain, color: 'text-blue-400', border: 'border-blue-500/30 bg-blue-500/10 text-blue-300' },
+                  { id: 'campfire', label: 'Campfire & Hearth', icon: Flame, color: 'text-orange-400', border: 'border-orange-500/30 bg-orange-500/10 text-orange-300' },
+                  { id: 'brownnoise', label: 'Deep Brown Noise', icon: Wind, color: 'text-stone-400', border: 'border-stone-500/30 bg-stone-500/10 text-stone-300' },
+                  { id: 'forest', label: 'Night Forest & Crickets', icon: Trees, color: 'text-emerald-400', border: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' },
+                  { id: 'clock', label: 'Rhythmic Clock Tick', icon: Clock, color: 'text-purple-400', border: 'border-purple-500/30 bg-purple-500/10 text-purple-300' },
+                  { id: 'chimes', label: 'Wind Chimes', icon: Bell, color: 'text-yellow-400', border: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300' },
+                ].map((s) => {
+                  const Icon = s.icon;
+                  const isActive = soundType === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => handleSoundToggle(s.id as any)}
+                      className={cn(
+                        "w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left",
+                        isActive
+                          ? s.border + " shadow-sm"
+                          : "bg-background/30 border-transparent text-zinc-400 hover:bg-background/80"
+                      )}
+                    >
+                      <span className="flex items-center gap-2 text-xs font-bold truncate">
+                        <Icon className={cn("w-4 h-4 shrink-0", s.color, isActive && "animate-pulse")} />
+                        <span className="truncate">{s.label}</span>
+                      </span>
+                      <Badge variant="outline" className={cn("text-[9px] border px-1.5 shrink-0 ml-1",
+                        isActive ? "border-primary/40 text-primary font-bold" : "border-zinc-800 text-zinc-500"
+                      )}>
+                        {isActive ? 'PLAYING' : 'MUTED'}
+                      </Badge>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Volume Slider controller */}

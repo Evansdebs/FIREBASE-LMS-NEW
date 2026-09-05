@@ -7,10 +7,15 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Save, Shield, Settings2, BookOpen, Database, Loader2, Palette, Globe, AlertTriangle } from 'lucide-react';
+import { Save, Shield, Settings2, BookOpen, Database, Loader2, Palette, Globe, AlertTriangle, Download, Upload, Cloud } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { getSettings, updateSettings } from '@/lib/services/settingsService';
+import { 
+  getSettings, updateSettings, 
+  generateBackupData, restoreFromBackupData, 
+  createCloudBackup, getCloudBackups, 
+  deleteCloudBackup, restoreCloudBackup, BackupMetadata 
+} from '@/lib/services/settingsService';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<any>(null);
@@ -39,8 +44,12 @@ export default function SettingsPage() {
   };
 
   const fetchBackups = async () => {
-    // Backups are managed locally — Firestore handles persistence
-    setBackups([]);
+    try {
+      const cloudList = await getCloudBackups();
+      setBackups(cloudList);
+    } catch (err: any) {
+      console.error('Failed to load cloud backups:', err);
+    }
   };
 
   const handleSave = async (section: string, passwordOverride?: string, settingsOverride?: any) => {
@@ -351,84 +360,180 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div className="mt-8 border-t border-border pt-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-heading text-lg font-semibold text-card-foreground">System Backups & Archives</h3>
-                    <div className="flex gap-2">
-                      <input type="file" id="backup-upload" accept=".tar.gz" className="hidden" onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        if (!window.confirm("WARNING: Uploading a backup will instantly overwrite your live database and uploads! \n\nContinue?")) {
-                          e.target.value = '';
-                          return;
-                        }
-                        try {
-                          toast.loading("Uploading and Restoring...", { id: 'upload-restore' });
-                          const formData = new FormData();
-                          formData.append('backup', file);
-                          await api.post('/api/admin/backups/upload-restore', formData);
-                          toast.success("Restore completed! Forcing refresh...", { id: 'upload-restore' });
-                          setTimeout(() => window.location.reload(), 2000);
-                        } catch (err: any) {
-                          toast.error(err.response?.data?.error || "Failed to restore from upload", { id: 'upload-restore' });
-                        }
-                        e.target.value = '';
-                      }} />
-                      <Button variant="outline" className="gap-2" onClick={() => document.getElementById('backup-upload')?.click()}>
-                        <Database className="w-4 h-4" /> Restore from Device
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                      <h3 className="font-heading text-lg font-semibold text-card-foreground">System Backups & Archives</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">Generate live cloud snapshots or export/restore local JSON backup files.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {/* Local File Download */}
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="gap-1.5 font-semibold text-xs border-primary/30 text-primary hover:bg-primary/10"
+                        onClick={async () => {
+                          try {
+                            toast.loading('Generating local database snapshot...', { id: 'dl-backup' });
+                            const { meta, data } = await generateBackupData();
+                            const jsonStr = JSON.stringify({ meta, data }, null, 2);
+                            const blob = new Blob([jsonStr], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            const dateStr = new Date().toISOString().slice(0, 10);
+                            a.href = url;
+                            a.download = `onereal_lms_backup_${dateStr}.json`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                            toast.success(`Exported ${meta.totalRecords} records across all collections!`, { id: 'dl-backup' });
+                          } catch (err: any) {
+                            toast.error(err.message || 'Failed to generate local backup', { id: 'dl-backup' });
+                          }
+                        }}
+                      >
+                        <Download className="w-3.5 h-3.5" /> Download Local Backup
                       </Button>
-                      <Button variant="outline" className="gap-2 border-primary/50 text-foreground" onClick={async () => {
-                        try {
-                          toast.loading('Generating hybrid backup archive...', { id: 'backup' });
-                          await api.post('/api/admin/backups', {});
-                          toast.success('Backup generated & archived', { id: 'backup' });
-                          fetchBackups();
-                        } catch (err) {
-                          toast.error('Failed to generate backup', { id: 'backup' });
-                        }
-                      }}>
-                        <Save className="w-4 h-4" /> Create New Archive
+
+                      {/* Local File Upload Restore */}
+                      <input 
+                        type="file" 
+                        id="backup-upload" 
+                        accept=".json" 
+                        className="hidden" 
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (!window.confirm("WARNING: Uploading a backup will restore and merge all records into your live Firestore database!\n\nDo you want to proceed?")) {
+                            e.target.value = '';
+                            return;
+                          }
+                          try {
+                            toast.loading("Validating and restoring database from file...", { id: 'upload-restore' });
+                            const text = await file.text();
+                            const parsed = JSON.parse(text);
+                            const res = await restoreFromBackupData(parsed);
+                            toast.success(`Successfully restored ${res.restored} records! Reloading...`, { id: 'upload-restore' });
+                            setTimeout(() => window.location.reload(), 1500);
+                          } catch (err: any) {
+                            toast.error(err.message || "Failed to restore from upload", { id: 'upload-restore' });
+                          }
+                          e.target.value = '';
+                        }} 
+                      />
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="gap-1.5 font-semibold text-xs" 
+                        onClick={() => document.getElementById('backup-upload')?.click()}
+                      >
+                        <Upload className="w-3.5 h-3.5" /> Restore from Device
+                      </Button>
+
+                      {/* Cloud Snapshot Creation */}
+                      <Button 
+                        variant="default" 
+                        size="sm" 
+                        className="gap-1.5 font-semibold text-xs shadow-md shadow-primary/20" 
+                        onClick={async () => {
+                          try {
+                            toast.loading('Saving cloud snapshot to Firestore...', { id: 'cloud-backup' });
+                            const created = await createCloudBackup();
+                            toast.success(`Cloud snapshot created (${created.totalRecords} records)!`, { id: 'cloud-backup' });
+                            fetchBackups();
+                          } catch (err: any) {
+                            toast.error(err.message || 'Failed to create cloud backup', { id: 'cloud-backup' });
+                          }
+                        }}
+                      >
+                        <Cloud className="w-3.5 h-3.5" /> Create Cloud Snapshot
                       </Button>
                     </div>
                   </div>
-                  <div className="space-y-3">
+
+                  {/* Cloud backups list */}
+                  <div className="space-y-3 mt-4">
                     {backups.map((b, i) => (
-                      <div key={i} className="flex justify-between items-center p-3 rounded-lg border border-border bg-card">
-                        <div>
-                          <p className="font-medium text-sm text-card-foreground">{b.filename}</p>
-                          <p className="text-xs text-muted-foreground">{new Date(b.createdAt).toLocaleString()} · {(b.size / 1024 / 1024).toFixed(2)} MB</p>
+                      <div key={b.id || i} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl border border-border bg-card/60 gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Cloud className="w-4 h-4 text-primary shrink-0" />
+                            <p className="font-semibold text-sm text-card-foreground truncate">{b.filename}</p>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold">Cloud Snapshot</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(b.createdAt).toLocaleString()} · {b.totalRecords} records · {(b.size / 1024).toFixed(1)} KB
+                          </p>
                         </div>
-                        <div className="flex gap-2">
-                           <Button size="sm" variant="outline" onClick={async () => {
-                             try {
-                               toast.loading("Downloading securely...", { id: 'dl' });
-                               const res = await api.get(`/api/admin/backups/${b.filename}`, { responseType: 'blob' });
-                               const url = window.URL.createObjectURL(new Blob([res as any], { type: 'application/gzip' }));
-                               const a = document.createElement('a'); a.href = url; a.download = b.filename;
-                               document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
-                               toast.success("Download started", { id: 'dl' });
-                             } catch(err) { toast.error("Failed to download", { id: 'dl' }); }
-                           }}>Download File</Button>
-                           <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={async () => {
-                             if (!window.confirm("Delete this archive forever?")) return;
-                             try {
-                               await api.delete(`/api/admin/backups/${b.filename}`);
-                               toast.success("Archive deleted");
-                               fetchBackups();
-                             } catch(err) { toast.error("Failed to delete archive"); }
-                           }}>Delete</Button>
-                           <Button size="sm" variant="destructive" onClick={async () => {
-                             if (!window.confirm("WARNING: Restoring this archive will INSTANTLY OVERWRITE your live database and uploads directory. Any data created since this backup will be permanently lost! \n\nContinue with Restore?")) return;
-                             try {
-                               toast.loading("Restoring backup... System going offline temporarily.", { id: 'restore' });
-                               await api.post(`/api/admin/backups/${b.filename}/restore`, {});
-                               toast.success("Restore completed! Forcing refresh...", { id: 'restore' });
-                               setTimeout(() => window.location.reload(), 2000);
-                             } catch(err) { toast.error("Failed to restore backup", { id: 'restore' }); }
-                           }}>Restore</Button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="h-8 text-xs gap-1"
+                            onClick={() => {
+                              try {
+                                const jsonStr = JSON.stringify(b.snapshotData || b, null, 2);
+                                const blob = new Blob([jsonStr], { type: 'application/json' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = b.filename;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                                toast.success("Downloaded snapshot file");
+                              } catch(err) {
+                                toast.error("Failed to download");
+                              }
+                            }}
+                          >
+                            <Download className="w-3 h-3" /> Download JSON
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="destructive" 
+                            className="h-8 text-xs"
+                            onClick={async () => {
+                              if (!window.confirm(`WARNING: Restoring this snapshot will sync all data into your live Firestore database.\n\nContinue?`)) return;
+                              try {
+                                toast.loading("Restoring cloud snapshot...", { id: 'cloud-restore' });
+                                const res = await restoreCloudBackup(b);
+                                toast.success(`Restored ${res.restored} records! Reloading...`, { id: 'cloud-restore' });
+                                setTimeout(() => window.location.reload(), 1500);
+                              } catch(err: any) {
+                                toast.error(err.message || "Failed to restore cloud snapshot", { id: 'cloud-restore' });
+                              }
+                            }}
+                          >
+                            Restore
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-8 text-xs text-destructive hover:bg-destructive/10" 
+                            onClick={async () => {
+                              if (!window.confirm("Permanently delete this cloud snapshot?")) return;
+                              try {
+                                await deleteCloudBackup(b.id);
+                                toast.success("Cloud snapshot deleted");
+                                fetchBackups();
+                              } catch(err: any) {
+                                toast.error("Failed to delete snapshot");
+                              }
+                            }}
+                          >
+                            Delete
+                          </Button>
                         </div>
                       </div>
                     ))}
-                    {backups.length === 0 && <p className="text-xs text-muted-foreground py-4 text-center bg-muted/50 rounded-lg">No archives found. Max 5 backups allowed.</p>}
+                    {backups.length === 0 && (
+                      <div className="text-center py-6 border border-dashed border-border rounded-xl bg-muted/20">
+                        <Database className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
+                        <p className="text-xs text-muted-foreground">No cloud archives saved yet. Click "Create Cloud Snapshot" or "Download Local Backup" above.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
