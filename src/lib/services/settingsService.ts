@@ -36,8 +36,11 @@ export async function getSettings(): Promise<SystemSettings> {
 }
 
 export async function updateSettings(data: Partial<SystemSettings>): Promise<void> {
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([_, v]) => v !== undefined)
+  );
   await setDoc(doc(db, 'settings', 'system'), {
-    ...data,
+    ...cleanData,
     updatedAt: new Date().toISOString()
   }, { merge: true });
 }

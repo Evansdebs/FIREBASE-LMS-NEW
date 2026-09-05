@@ -14,12 +14,13 @@ import {
   getSettings, updateSettings, 
   generateBackupData, restoreFromBackupData, 
   createCloudBackup, getCloudBackups, 
-  deleteCloudBackup, restoreCloudBackup, BackupMetadata 
+  deleteCloudBackup, restoreCloudBackup, BackupMetadata,
+  SystemSettings
 } from '@/lib/services/settingsService';
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<any>(null);
-  const [backups, setBackups] = useState<any[]>([]);
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [backups, setBackups] = useState<BackupMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
@@ -36,7 +37,7 @@ export default function SettingsPage() {
     try {
       const res = await getSettings();
       setSettings(res);
-    } catch (err: any) {
+    } catch {
       toast.error('Failed to load settings');
     } finally {
       setLoading(false);
@@ -47,15 +48,15 @@ export default function SettingsPage() {
     try {
       const cloudList = await getCloudBackups();
       setBackups(cloudList);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load cloud backups:', err);
     }
   };
 
-  const handleSave = async (section: string, passwordOverride?: string, settingsOverride?: any) => {
+  const handleSave = async (section: string, passwordOverride?: string, settingsOverride?: Partial<SystemSettings>) => {
     try {
       setSaving(true);
-      const payload = { ...(settingsOverride || settings) };
+      const payload: Partial<SystemSettings> & { adminPassword?: string } = { ...(settingsOverride || settings) };
       if (passwordOverride) {
         payload.adminPassword = passwordOverride;
       }
@@ -68,8 +69,9 @@ export default function SettingsPage() {
       }
       // Re-fetch to ensure sync
       await fetchSettings();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to save settings');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save settings';
+      toast.error(msg);
       // Always re-fetch settings on error to revert optimistic or failed states
       await fetchSettings();
     } finally {
@@ -336,19 +338,23 @@ export default function SettingsPage() {
                            type="file" 
                            accept="image/*" 
                            className="flex-1 text-xs cursor-pointer file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90" 
-                           onChange={async (e) => {
+                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                              const file = e.target.files?.[0];
                              if (!file) return;
-                             const uploadToast = toast.loading('Uploading logo to system server...');
-                             try {
-                               const formData = new FormData();
-                               formData.append('logo', file);
-                               const response = await api.post('/api/admin/settings/upload-logo', formData);
-                               setSettings({ ...settings, logo: response.logo });
-                               toast.success('Branding logo uploaded successfully!', { id: uploadToast });
-                             } catch (err: any) {
-                               toast.error(err.response?.data?.error || 'Failed to upload logo', { id: uploadToast });
+                             if (file.size > 2 * 1024 * 1024) {
+                               toast.error('Logo image must be smaller than 2MB');
+                               return;
                              }
+                             const reader = new FileReader();
+                             reader.onload = () => {
+                               const base64 = reader.result as string;
+                               setSettings(prev => prev ? { ...prev, logo: base64 } : prev);
+                               toast.success('Branding logo loaded from device! Click "Apply Branding" to save.');
+                             };
+                             reader.onerror = () => {
+                               toast.error('Failed to read image file');
+                             };
+                             reader.readAsDataURL(file);
                            }} 
                          />
                        )}
@@ -393,7 +399,7 @@ export default function SettingsPage() {
                       <p className="text-xs text-muted-foreground">Disable access for all non-admin users instantly.</p>
                     </div>
                     <Switch 
-                      checked={settings.lockdownMode} 
+                      checked={!!settings.lockdownMode} 
                       onCheckedChange={v => {
                         if (v !== settings.lockdownMode) {
                           setPendingLockdown(v);
@@ -408,7 +414,7 @@ export default function SettingsPage() {
                         <p className="text-sm font-medium text-card-foreground">Allow New Teacher Registrations</p>
                         <p className="text-xs text-muted-foreground">Enable the public registration form on the login screen.</p>
                     </div>
-                    <Switch checked={settings.allowRegistration} onCheckedChange={v => setSettings({...settings, allowRegistration: v})} className="data-[state=unchecked]:bg-slate-300 data-[state=checked]:bg-primary" />
+                    <Switch checked={!!settings.allowRegistration} onCheckedChange={v => setSettings({...settings, allowRegistration: v})} className="data-[state=unchecked]:bg-slate-300 data-[state=checked]:bg-primary" />
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
                     <div>
@@ -455,8 +461,9 @@ export default function SettingsPage() {
                             document.body.removeChild(a);
                             URL.revokeObjectURL(url);
                             toast.success(`Exported ${meta.totalRecords} records across all collections!`, { id: 'dl-backup' });
-                          } catch (err: any) {
-                            toast.error(err.message || 'Failed to generate local backup', { id: 'dl-backup' });
+                          } catch (err: unknown) {
+                            const msg = err instanceof Error ? err.message : 'Failed to generate local backup';
+                            toast.error(msg, { id: 'dl-backup' });
                           }
                         }}
                       >
@@ -483,8 +490,9 @@ export default function SettingsPage() {
                             const res = await restoreFromBackupData(parsed);
                             toast.success(`Successfully restored ${res.restored} records! Reloading...`, { id: 'upload-restore' });
                             setTimeout(() => window.location.reload(), 1500);
-                          } catch (err: any) {
-                            toast.error(err.message || "Failed to restore from upload", { id: 'upload-restore' });
+                          } catch (err: unknown) {
+                            const msg = err instanceof Error ? err.message : 'Failed to restore from upload';
+                            toast.error(msg, { id: 'upload-restore' });
                           }
                           e.target.value = '';
                         }} 
@@ -509,8 +517,9 @@ export default function SettingsPage() {
                             const created = await createCloudBackup();
                             toast.success(`Cloud snapshot created (${created.totalRecords} records)!`, { id: 'cloud-backup' });
                             fetchBackups();
-                          } catch (err: any) {
-                            toast.error(err.message || 'Failed to create cloud backup', { id: 'cloud-backup' });
+                          } catch (err: unknown) {
+                            const msg = err instanceof Error ? err.message : 'Failed to create cloud backup';
+                            toast.error(msg, { id: 'cloud-backup' });
                           }
                         }}
                       >
@@ -569,8 +578,9 @@ export default function SettingsPage() {
                                 const res = await restoreCloudBackup(b);
                                 toast.success(`Restored ${res.restored} records! Reloading...`, { id: 'cloud-restore' });
                                 setTimeout(() => window.location.reload(), 1500);
-                              } catch(err: any) {
-                                toast.error(err.message || "Failed to restore cloud snapshot", { id: 'cloud-restore' });
+                              } catch (err: unknown) {
+                                const msg = err instanceof Error ? err.message : 'Failed to restore cloud snapshot';
+                                toast.error(msg, { id: 'cloud-restore' });
                               }
                             }}
                           >
@@ -586,8 +596,9 @@ export default function SettingsPage() {
                                 await deleteCloudBackup(b.id);
                                 toast.success("Cloud snapshot deleted");
                                 fetchBackups();
-                              } catch(err: any) {
-                                toast.error("Failed to delete snapshot");
+                              } catch (err: unknown) {
+                                const msg = err instanceof Error ? err.message : 'Failed to delete snapshot';
+                                toast.error(msg);
                               }
                             }}
                           >
