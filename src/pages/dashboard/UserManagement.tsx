@@ -490,10 +490,12 @@ function CreateUserForm({ onClose, onRefresh, existingUsers }: { onClose: () => 
 
     try {
       setLoading(true);
+      const selectedClass = classes.find(c => c.id?.toString() === form.classId?.toString());
       await createUser({ 
         ...form, 
         email: cleanEmail,
         role: form.role.toUpperCase() as any, 
+        className: selectedClass ? selectedClass.name : undefined,
         mustChangePassword: true 
       });
       toast.success('User created successfully');

@@ -111,9 +111,29 @@ export async function createUser(data: {
   const secondaryAuth = getAuth(secondaryApp);
 
   try {
-    // Create in Firebase Auth via secondary app instance
-    const credential = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, data.password);
-    const uid = credential.user.uid;
+    let uid: string;
+    try {
+      // Create in Firebase Auth via secondary app instance
+      const credential = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, data.password);
+      uid = credential.user.uid;
+    } catch (authErr: any) {
+      // If auth already exists (e.g. previous creation attempt created the auth user but failed writing to Firestore)
+      if (authErr.code === 'auth/email-already-in-use') {
+        const firestoreExists = await checkEmailExists(cleanEmail);
+        if (firestoreExists) {
+          throw new Error(`The email "${cleanEmail}" is already in the system. Please choose a different email before continuing.`);
+        }
+        // Recover orphaned auth user's UID to complete the Firestore profile
+        try {
+          const recovered = await signInWithEmailAndPassword(secondaryAuth, cleanEmail, data.password);
+          uid = recovered.user.uid;
+        } catch {
+          throw new Error(`The email "${cleanEmail}" is already registered in Firebase Authentication. Please choose a different email.`);
+        }
+      } else {
+        throw authErr;
+      }
+    }
 
     // Immediately sign out secondary auth session and clean up app
     try {
@@ -121,7 +141,7 @@ export async function createUser(data: {
       await deleteApp(secondaryApp);
     } catch (_) {}
 
-    const profile: Omit<UserProfile, 'id'> = {
+    const rawProfile = {
       email: cleanEmail,
       name: data.name.trim(),
       fullName: data.name.trim(),
@@ -140,9 +160,15 @@ export async function createUser(data: {
       createdAt: new Date().toISOString(),
     };
 
+    // Filter out all undefined keys so Firestore setDoc never throws
+    // "unsupported field value: undefined"
+    const cleanProfile = Object.fromEntries(
+      Object.entries(rawProfile).filter(([_, v]) => v !== undefined)
+    ) as Omit<UserProfile, 'id'>;
+
     // Save profile using the main db instance (admin is still authenticated)
-    await setDoc(doc(db, USERS, uid), profile);
-    return { id: uid, ...profile };
+    await setDoc(doc(db, USERS, uid), cleanProfile);
+    return { id: uid, ...cleanProfile } as UserProfile;
   } catch (error: any) {
     try {
       await deleteApp(secondaryApp);
@@ -158,7 +184,10 @@ export async function createUser(data: {
 /* ─── Update ────────────────────────────────────────────────── */
 export async function updateUser(uid: string, data: Partial<UserProfile>): Promise<void> {
   const { id, ...rest } = data as any;
-  await updateDoc(doc(db, USERS, uid), { ...rest, updatedAt: new Date().toISOString() });
+  const clean = Object.fromEntries(
+    Object.entries(rest).filter(([_, v]) => v !== undefined)
+  );
+  await updateDoc(doc(db, USERS, uid), { ...clean, updatedAt: new Date().toISOString() });
 }
 
 export async function updateUserPermissions(uid: string, permissions: Record<string, boolean>): Promise<void> {
