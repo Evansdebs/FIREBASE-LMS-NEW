@@ -177,7 +177,6 @@ export async function createForumPost(data: Omit<ForumPost, 'id'>): Promise<Foru
   }
   return { id: ref.id, ...data };
 }
-
 /* ─── SHOP ─────────────────────────────────────────────── */
 export interface ShopItem {
   id: string;
@@ -186,10 +185,22 @@ export interface ShopItem {
   price: number;
   category: string;
   imageUrl?: string;
+  images?: string[];
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   contactPhone?: string;
   createdBy: string;
   createdByName?: string;
+  creatorEmail?: string;
+  creatorUsername?: string;
+  creator?: {
+    name?: string;
+    email?: string;
+    username?: string;
+    phone?: string;
+  };
+  interestedUsers?: string[];
+  interestCount?: number;
+  hasInterest?: boolean;
   createdAt?: string;
 }
 
@@ -211,6 +222,22 @@ export async function updateShopItem(id: string, data: Partial<ShopItem>): Promi
 
 export async function deleteShopItem(id: string): Promise<void> {
   await deleteDoc(doc(db, 'shop_items', id));
+}
+
+export async function toggleShopItemInterest(itemId: string, userId: string): Promise<boolean> {
+  const itemRef = doc(db, 'shop_items', itemId);
+  const snap = await getDoc(itemRef);
+  if (!snap.exists()) return false;
+  const data = snap.data();
+  const interested: string[] = Array.isArray(data.interestedUsers) ? data.interestedUsers : [];
+  const uid = String(userId);
+  const hasInterest = interested.includes(uid);
+  const updated = hasInterest ? interested.filter(id => id !== uid) : [...interested, uid];
+  await updateDoc(itemRef, {
+    interestedUsers: updated,
+    interestCount: updated.length
+  });
+  return !hasInterest;
 }
 
 /* ─── SIMULATIONS ─────────────────────────────────────────── */

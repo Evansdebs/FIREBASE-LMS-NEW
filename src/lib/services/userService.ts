@@ -67,13 +67,25 @@ export async function getStudentsByClass(classId: string): Promise<UserProfile[]
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile));
 }
+/* ─── Check Email ────────────────────────────────────────────── */
+export async function checkEmailExists(email: string): Promise<boolean> {
+  if (!email || !email.trim()) return false;
+  const normalized = email.trim().toLowerCase();
+  const q = query(collection(db, USERS), where('email', '==', normalized));
+  const snap = await getDocs(q);
+  if (!snap.empty) return true;
+  // Fallback for case-sensitive legacy records
+  const q2 = query(collection(db, USERS), where('email', '==', email.trim()));
+  const snap2 = await getDocs(q2);
+  return !snap2.empty;
+}
 
 /* ─── Create ────────────────────────────────────────────────── */
 export async function createUser(data: {
   email: string;
   password: string;
   name: string;
-  role: 'TEACHER' | 'STUDENT';
+  role: 'SUPER_ADMIN' | 'TEACHER' | 'STUDENT';
   classId?: string;
   className?: string;
   gender?: string;
@@ -82,31 +94,46 @@ export async function createUser(data: {
   parentPhone?: string;
   mustChangePassword?: boolean;
 }): Promise<UserProfile> {
-  // Create in Firebase Auth first
-  const credential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-  const uid = credential.user.uid;
+  const cleanEmail = data.email.trim().toLowerCase();
 
-  const profile: Omit<UserProfile, 'id'> = {
-    email: data.email,
-    name: data.name,
-    fullName: data.name,
-    role: data.role,
-    isActive: true,
-    gender: data.gender,
-    mustChangePassword: data.mustChangePassword ?? true,
-    classId: data.classId,
-    className: data.className,
-    parentName: data.parentName,
-    parentEmail: data.parentEmail,
-    parentPhone: data.parentPhone,
-    permissions: {},
-    points: 0,
-    loginCount: 0,
-    createdAt: new Date().toISOString(),
-  };
+  // Validate duplicate email in system before proceeding
+  const exists = await checkEmailExists(cleanEmail);
+  if (exists) {
+    throw new Error(`The email "${cleanEmail}" is already in the system. Please choose a different email before continuing.`);
+  }
 
-  await setDoc(doc(db, USERS, uid), profile);
-  return { id: uid, ...profile };
+  try {
+    // Create in Firebase Auth first
+    const credential = await createUserWithEmailAndPassword(auth, cleanEmail, data.password);
+    const uid = credential.user.uid;
+
+    const profile: Omit<UserProfile, 'id'> = {
+      email: cleanEmail,
+      name: data.name.trim(),
+      fullName: data.name.trim(),
+      role: data.role,
+      isActive: true,
+      gender: data.gender,
+      mustChangePassword: data.mustChangePassword ?? true,
+      classId: data.classId,
+      className: data.className,
+      parentName: data.parentName,
+      parentEmail: data.parentEmail,
+      parentPhone: data.parentPhone,
+      permissions: {},
+      points: 0,
+      loginCount: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    await setDoc(doc(db, USERS, uid), profile);
+    return { id: uid, ...profile };
+  } catch (error: any) {
+    if (error.code === 'auth/email-already-in-use') {
+      throw new Error(`The email "${cleanEmail}" is already in the system. Please choose a different email before continuing.`);
+    }
+    throw error;
+  }
 }
 
 /* ─── Update ────────────────────────────────────────────────── */

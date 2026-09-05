@@ -15,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
 import {
-  Search, Plus, MoreVertical, UserCheck, UserX, Edit, Trash2, Loader2, Eye, EyeOff, RefreshCw, User as UserIcon, Download
+  Search, Plus, MoreVertical, UserCheck, UserX, Edit, Trash2, Loader2, Eye, EyeOff, RefreshCw, User as UserIcon, Download, AlertCircle
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
@@ -253,28 +253,30 @@ export default function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">User Management</h1>
-          <p className="text-muted-foreground mt-1">{users.length} total users</p>
+          <p className="text-muted-foreground mt-0.5 text-xs sm:text-sm">{users.length} total users</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Dialog open={showCreate} onOpenChange={setShowCreate}>
+            <DialogTrigger asChild>
+              <Button className="gap-2 shadow-sm order-first sm:order-last">
+                <Plus className="w-4 h-4" /> Add User
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader><DialogTitle className="font-heading">Create New User</DialogTitle></DialogHeader>
+              <CreateUserForm onClose={() => setShowCreate(false)} onRefresh={fetchUsers} existingUsers={users} />
+            </DialogContent>
+          </Dialog>
+
           <BulkUploadModal onComplete={fetchUsers} />
 
           <Button variant="outline" className="gap-2" onClick={handleExport} disabled={exporting}>
             {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Export Excel
           </Button>
-
-          <Dialog open={showCreate} onOpenChange={setShowCreate}>
-            <DialogTrigger asChild>
-              <Button className="gap-2"><Plus className="w-4 h-4" /> Add User</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle className="font-heading">Create New User</DialogTitle></DialogHeader>
-              <CreateUserForm onClose={() => setShowCreate(false)} onRefresh={fetchUsers} />
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
@@ -438,11 +440,22 @@ export default function UserManagement() {
   );
 }
 
-function CreateUserForm({ onClose, onRefresh }: { onClose: () => void; onRefresh: () => void }) {
+function CreateUserForm({ onClose, onRefresh, existingUsers }: { onClose: () => void; onRefresh: () => void; existingUsers?: any[] }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'student', classId: '', gender: '' });
   const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Check if the typed email is already registered in the system
+  const isEmailDuplicate = (emailToCheck: string) => {
+    const clean = emailToCheck.trim().toLowerCase();
+    if (!clean) return false;
+    return (existingUsers || []).some(
+      u => (u.email || '').trim().toLowerCase() === clean
+    );
+  };
+
+  const isDuplicate = isEmailDuplicate(form.email);
 
   const getPasswordStrength = (password: string) => {
     if (!password) return { score: 0, label: '', color: 'bg-muted' };
@@ -467,14 +480,27 @@ function CreateUserForm({ onClose, onRefresh }: { onClose: () => void; onRefresh
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanEmail = form.email.trim().toLowerCase();
+
+    // Check if email already in system and prompt admin
+    if (isEmailDuplicate(cleanEmail)) {
+      toast.error(`The email "${cleanEmail}" is already in the system. Please choose a different email before continuing.`);
+      return;
+    }
+
     try {
       setLoading(true);
-      await createUser({ ...form, role: form.role.toUpperCase() as 'TEACHER' | 'STUDENT', mustChangePassword: true });
+      await createUser({ 
+        ...form, 
+        email: cleanEmail,
+        role: form.role.toUpperCase() as any, 
+        mustChangePassword: true 
+      });
       toast.success('User created successfully');
       onRefresh();
       onClose();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Failed to create user');
     } finally {
       setLoading(false);
     }
@@ -483,16 +509,35 @@ function CreateUserForm({ onClose, onRefresh }: { onClose: () => void; onRefresh
   return (
     <form onSubmit={handleSubmit} className="space-y-4 py-2">
       <div className="space-y-2">
-        <Label>Full Name</Label>
-        <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} required />
+        <Label>Full Name *</Label>
+        <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Kwame Mensah" required />
       </div>
       <div className="space-y-2">
-        <Label>Email</Label>
-        <Input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} required />
+        <Label>Email *</Label>
+        <Input 
+          type="email" 
+          value={form.email} 
+          onChange={e => setForm(p => ({ ...p, email: e.target.value }))} 
+          placeholder="student@school.edu"
+          required 
+          className={cn(isDuplicate && "border-destructive focus-visible:ring-destructive")}
+        />
+        {/* Real-time duplicate prompt */}
+        {isDuplicate && (
+          <div className="flex items-start gap-2 p-2.5 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-xs animate-in fade-in duration-200">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Email already in system</p>
+              <p className="mt-0.5">
+                This email address is already registered in the LMS. Please choose a different email before continuing.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
       <div className="space-y-2">
         <div className="flex justify-between items-center">
-          <Label>Default Password</Label>
+          <Label>Default Password *</Label>
           <Button 
             type="button" 
             variant="ghost" 
@@ -580,7 +625,7 @@ function CreateUserForm({ onClose, onRefresh }: { onClose: () => void; onRefresh
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading || isDuplicate}>
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create User'}
         </Button>
       </div>
