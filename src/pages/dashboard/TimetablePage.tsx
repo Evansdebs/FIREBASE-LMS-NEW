@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import {
-  getClasses, getSubjects, getTimetable,
+  getClasses, getSubjects, getCourses, getTimetable,
   createTimetableEntry, updateTimetableEntry,
   deleteTimetableEntry, TimetableEntry, ClassDoc, SubjectDoc
 } from '@/lib/services/academicService';
@@ -116,6 +116,7 @@ export default function TimetablePage() {
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [timetable, setTimetable] = useState<any[]>([]);
   const [showWeekends, setShowWeekends] = useState(false);
+  const [selectedMobileDay, setSelectedMobileDay] = useState<string>('ALL');
 
   // Dialog State
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -166,16 +167,25 @@ export default function TimetablePage() {
   const fetchConfig = async () => {
     try {
       setLoading(true);
-      const [classes, subjects, teachers] = await Promise.all([
+      const [classes, subjects, courses, teachers] = await Promise.all([
         getClasses(),
-        getSubjects(),
-        getUsersByRole('teacher')
+        getSubjects().catch(() => []),
+        getCourses().catch(() => []),
+        getUsersByRole('teacher').catch(() => [])
       ]);
 
-      const classesWithSubjects = classes.map(c => ({
-        ...c,
-        subjects: subjects.filter(s => s.classId === c.id)
-      }));
+      const classesWithSubjects = classes.map(c => {
+        const classSubs = subjects.filter(s => s.classId === c.id);
+        const subjectList = classSubs.length > 0 ? classSubs : (
+          courses.length > 0 
+            ? courses.map(co => ({ id: co.id, name: co.title || (co as any).name || 'Course', classId: c.id }))
+            : subjects
+        );
+        return {
+          ...c,
+          subjects: subjectList
+        };
+      });
 
       setConfigData({ classes: classesWithSubjects, teachers });
       
@@ -192,8 +202,14 @@ export default function TimetablePage() {
   const fetchStudentTimetable = async () => {
     try {
       setLoading(true);
-      if (user?.classId) {
-        const res = await getTimetable(user.classId as string);
+      let targetClassId = user?.classId;
+      if (!targetClassId && user?.className) {
+        const allClasses = await getClasses();
+        const found = allClasses.find(c => c.name.toLowerCase() === user.className?.toLowerCase());
+        if (found) targetClassId = found.id;
+      }
+      if (targetClassId) {
+        const res = await getTimetable(String(targetClassId));
         setTimetable(res);
       } else {
         setTimetable([]);
@@ -339,29 +355,33 @@ export default function TimetablePage() {
       : DAYS.filter(d => d.value !== 'SATURDAY' && d.value !== 'SUNDAY');
   }, [showWeekends]);
 
+  const daysToRender = useMemo(() => {
+    if (selectedMobileDay === 'ALL') return displayedDays;
+    return displayedDays.filter(d => d.value === selectedMobileDay);
+  }, [displayedDays, selectedMobileDay]);
+
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       {/* Header section with modern glassmorphism touch */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card/60 backdrop-blur-md p-6 rounded-2xl border border-border/80 shadow-sm">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card/60 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-border/80 shadow-sm">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-indigo-500 to-emerald-500 bg-clip-text text-transparent flex items-center gap-2">
-            <Grid className="w-8 h-8 text-indigo-500" />
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-indigo-500 to-emerald-500 bg-clip-text text-transparent flex items-center gap-2">
+            <Grid className="w-7 h-7 sm:w-8 sm:h-8 text-indigo-500" />
             Weekly Class Timetable
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
             {isTeacherOrAdmin 
               ? 'Schedule and manage class subjects, teachers, and study periods.'
               : 'View your class schedule, room numbers, and subject times.'}
           </p>
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto">
           {/* Class Select Dropdown (Teachers & Admins Only) */}
           {isTeacherOrAdmin && (
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <Label className="text-sm font-medium shrink-0 max-md:hidden">Class:</Label>
+            <div className="flex items-center gap-2 flex-1 sm:flex-initial min-w-[160px]">
               <Select value={selectedClassId} onValueChange={setSelectedClassId}>
-                <SelectTrigger className="w-full md:w-56 bg-background/50 border-border/85">
+                <SelectTrigger className="w-full sm:w-52 bg-background/50 border-border/85 h-9 text-xs">
                   <SelectValue placeholder="Select Class" />
                 </SelectTrigger>
                 <SelectContent>
@@ -379,7 +399,7 @@ export default function TimetablePage() {
           <Button 
             variant="outline" 
             size="sm" 
-            className={cn("shrink-0", showWeekends && "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30")}
+            className={cn("h-9 text-xs shrink-0", showWeekends && "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30")}
             onClick={() => setShowWeekends(!showWeekends)}
           >
             {showWeekends ? 'Hide Weekends' : 'Show Weekends'}
@@ -387,11 +407,49 @@ export default function TimetablePage() {
 
           {/* Add Period Button (Teachers & Admins Only) */}
           {isTeacherOrAdmin && (
-            <Button onClick={handleOpenAddDialog} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md gap-2 shrink-0">
+            <Button onClick={handleOpenAddDialog} size="sm" className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md gap-1.5 shrink-0 text-xs">
               <Plus className="w-4 h-4" /> Add Slot
             </Button>
           )}
         </div>
+      </div>
+
+      {/* Mobile Day Filter Tabs */}
+      <div className="flex md:hidden items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+        <button
+          type="button"
+          onClick={() => setSelectedMobileDay('ALL')}
+          className={cn(
+            "px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors border",
+            selectedMobileDay === 'ALL' 
+              ? "bg-primary text-primary-foreground border-primary" 
+              : "bg-card text-muted-foreground border-border hover:text-foreground"
+          )}
+        >
+          All Days
+        </button>
+        {displayedDays.map(d => {
+          const isToday = d.value === currentDayOfWeekStr;
+          const isSelected = selectedMobileDay === d.value;
+          return (
+            <button
+              key={d.value}
+              type="button"
+              onClick={() => setSelectedMobileDay(d.value)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors border flex items-center gap-1",
+                isSelected 
+                  ? "bg-primary text-primary-foreground border-primary" 
+                  : isToday 
+                    ? "bg-primary/10 text-primary border-primary/30"
+                    : "bg-card text-muted-foreground border-border hover:text-foreground"
+              )}
+            >
+              <span>{d.label.slice(0, 3)}</span>
+              {isToday && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />}
+            </button>
+          );
+        })}
       </div>
 
       {/* Main Timetable Content */}
@@ -408,8 +466,8 @@ export default function TimetablePage() {
           </p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-5 xl:grid-cols-5 gap-6">
-          {displayedDays.map(day => {
+        <div className="grid grid-cols-1 md:grid-cols-5 xl:grid-cols-5 gap-4 sm:gap-6">
+          {daysToRender.map(day => {
             const dayEntries = timetableByDay[day.value] || [];
             const isToday = day.value === currentDayOfWeekStr;
 
@@ -417,42 +475,44 @@ export default function TimetablePage() {
               <Card 
                 key={day.value} 
                 className={cn(
-                  "border border-border/80 rounded-2xl transition-all shadow-sm flex flex-col min-h-[450px]",
+                  "border border-border/80 rounded-2xl transition-all shadow-sm flex flex-col min-h-[360px] sm:min-h-[450px]",
                   isToday && "border-indigo-500/40 bg-indigo-500/[0.02]"
                 )}
               >
                 {/* Day Header */}
                 <CardHeader className={cn(
-                  "p-4 border-b border-border/80 flex flex-row items-center justify-between",
+                  "p-3 sm:p-4 border-b border-border/80 flex flex-row items-center justify-between",
                   isToday && "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-t-2xl"
                 )}>
-                  <CardTitle className="text-base font-bold tracking-tight">
+                  <CardTitle className="text-sm sm:text-base font-bold tracking-tight">
                     {day.label}
                   </CardTitle>
                   {isToday && (
-                    <Badge variant="outline" className="bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-none font-semibold text-2xs animate-pulse">
+                    <Badge variant="outline" className="bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-none font-semibold text-[10px] animate-pulse">
                       TODAY
                     </Badge>
                   )}
                 </CardHeader>
 
                 {/* Day Content Slots */}
-                <CardContent className="p-4 flex-1 space-y-4 overflow-y-auto">
+                <CardContent className="p-3 sm:p-4 flex-1 space-y-3 sm:space-y-4 overflow-y-auto">
                   {dayEntries.length === 0 ? (
                     <div className="h-full flex flex-col justify-center items-center text-center text-muted-foreground/50 py-10">
                       <Calendar className="w-8 h-8 opacity-20 mb-2" />
-                      <span className="text-xs">No slots</span>
+                      <span className="text-xs">No slots scheduled</span>
                     </div>
                   ) : (
                     dayEntries.map(entry => {
-                      const styles = getSubjectStyles(entry.subject.name);
-                      const live = isEntryLive(entry);
+                      const subjectTitle = entry.subjectName || entry.subject?.name || 'Subject';
+                      const styles = getSubjectStyles(subjectTitle);
+                      const live = isCurrentSlot(entry);
+                      const teacherTitle = entry.teacherName || entry.teacher?.fullName || entry.teacher?.name || entry.teacher?.user?.name || '';
 
                       return (
                         <div 
                           key={entry.id} 
                           className={cn(
-                            "relative group p-4 rounded-xl border transition-all duration-200 flex flex-col justify-between",
+                            "relative group p-3 sm:p-4 rounded-xl border transition-all duration-200 flex flex-col justify-between",
                             styles.bg,
                             styles.border,
                             live ? styles.glow : "hover:border-border-hover"
@@ -466,13 +526,13 @@ export default function TimetablePage() {
                             </div>
                           )}
 
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-start">
-                              <span className={cn("font-bold text-sm leading-tight", styles.text)}>
-                                {entry.subject.name}
+                          <div className="space-y-1.5 sm:space-y-2">
+                            <div className="flex justify-between items-start gap-2">
+                              <span className={cn("font-bold text-xs sm:text-sm leading-tight", styles.text)}>
+                                {subjectTitle}
                               </span>
                               {live && (
-                                <span className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-500 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded ml-2">
+                                <span className="text-[9px] sm:text-[10px] uppercase tracking-wider font-extrabold text-emerald-500 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded shrink-0">
                                   LIVE NOW
                                 </span>
                               )}
@@ -480,43 +540,45 @@ export default function TimetablePage() {
 
                             {/* Time info */}
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Clock className="w-3.5 h-3.5" />
+                              <Clock className="w-3.5 h-3.5 shrink-0" />
                               <span>{entry.startTime} - {entry.endTime}</span>
                             </div>
 
                             {/* Room Info */}
                             {entry.room && (
                               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <MapPin className="w-3.5 h-3.5" />
+                                <MapPin className="w-3.5 h-3.5 shrink-0" />
                                 <span>{entry.room}</span>
                               </div>
                             )}
 
                             {/* Teacher Info */}
-                            {entry.teacher && (
+                            {teacherTitle && (
                               <div className="flex items-center gap-1.5 text-xs text-muted-foreground/80 pt-1 border-t border-border/40">
-                                <User className="w-3.5 h-3.5 text-muted-foreground/60" />
-                                <span className="truncate">{entry.teacher.user.name}</span>
+                                <User className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                <span className="truncate">{teacherTitle}</span>
                               </div>
                             )}
                           </div>
 
                           {/* Edit / Delete actions for Teachers/Admins on hover */}
                           {isTeacherOrAdmin && (
-                            <div className="flex justify-end gap-1.5 mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <div className="flex justify-end gap-1.5 mt-2.5 sm:mt-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
                                 className="w-7 h-7 hover:bg-background/80 hover:text-indigo-600"
                                 onClick={() => handleOpenEditDialog(entry)}
+                                title="Edit slot"
                               >
                                 <Edit className="w-3.5 h-3.5" />
                               </Button>
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
-                                className="w-7 h-7 hover:bg-background/80 hover:text-red-600"
+                                className="w-7 h-7 hover:bg-background/80 hover:text-red-600 text-destructive"
                                 onClick={() => handleDeleteEntry(entry.id)}
+                                title="Delete slot"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </Button>

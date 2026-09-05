@@ -8,8 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import {
   Pencil, Eraser, Highlighter, Square, Circle, Triangle, ArrowRight,
   Minus, Type, Undo, Redo, Trash2, Download, Save, FolderOpen,
-  Grid, Maximize2, Minimize2, Check, Sparkles, Loader2, RefreshCw
+  Grid, Maximize2, Minimize2, Check, Sparkles, Loader2, RefreshCw,
+  FileText, Upload
 } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuTrigger, DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu';
 import {
   getWhiteboards, saveWhiteboard, deleteWhiteboard, WhiteboardDoc
 } from '@/lib/services/whiteboardService';
@@ -43,6 +48,7 @@ export default function WhiteboardPage() {
   const { user } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Tool settings
   const [currentTool, setCurrentTool] = useState<Tool>('pen');
@@ -339,30 +345,114 @@ export default function WhiteboardPage() {
     setHistoryStep(nextHistory.length);
   };
 
-  // Export handlers
-  const handleExportPNG = () => {
+  // Generate export canvas with clean white background and math grid if enabled
+  const getExportCanvas = () => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const image = canvas.toDataURL('image/png');
+    if (!canvas) return null;
+    const offscreen = document.createElement('canvas');
+    offscreen.width = canvas.width;
+    offscreen.height = canvas.height;
+    const offCtx = offscreen.getContext('2d');
+    if (!offCtx) return canvas;
+
+    // Crisp white background so exported images and PDFs look clear
+    offCtx.fillStyle = '#ffffff';
+    offCtx.fillRect(0, 0, offscreen.width, offscreen.height);
+
+    // Draw grid lines if visible
+    if (showGrid) {
+      offCtx.strokeStyle = 'rgba(150, 150, 150, 0.12)';
+      offCtx.lineWidth = 1;
+      const gridSize = 25 * (window.devicePixelRatio || 1);
+      for (let x = 0; x < offscreen.width; x += gridSize) {
+        offCtx.beginPath();
+        offCtx.moveTo(x, 0);
+        offCtx.lineTo(x, offscreen.height);
+        offCtx.stroke();
+      }
+      for (let y = 0; y < offscreen.height; y += gridSize) {
+        offCtx.beginPath();
+        offCtx.moveTo(0, y);
+        offCtx.lineTo(offscreen.width, y);
+        offCtx.stroke();
+      }
+    }
+
+    // Draw whiteboard strokes and drawings
+    offCtx.drawImage(canvas, 0, 0);
+    return offscreen;
+  };
+
+  // Export handlers (Download to Local Device Storage)
+  const handleExportPNG = () => {
+    const exportCanvas = getExportCanvas() || canvasRef.current;
+    if (!exportCanvas) return;
+    const image = exportCanvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = image;
-    a.download = `${boardTitle.replace(/\s+/g, '_')}.png`;
+    a.download = `${boardTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}.png`;
+    document.body.appendChild(a);
     a.click();
-    toast.success('Whiteboard exported as PNG!');
+    document.body.removeChild(a);
+    toast.success('Downloaded whiteboard image (PNG) to device!');
   };
 
   const handleExportPDF = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const image = canvas.toDataURL('image/png');
+    const exportCanvas = getExportCanvas() || canvasRef.current;
+    if (!exportCanvas) return;
+    const image = exportCanvas.toDataURL('image/jpeg', 0.95);
     const doc = new jsPDF({
       orientation: 'landscape',
       unit: 'px',
-      format: [canvas.width, canvas.height]
+      format: [exportCanvas.width, exportCanvas.height]
     });
-    doc.addImage(image, 'PNG', 0, 0, canvas.width, canvas.height);
-    doc.save(`${boardTitle.replace(/\s+/g, '_')}.pdf`);
-    toast.success('Whiteboard exported as PDF!');
+    doc.addImage(image, 'JPEG', 0, 0, exportCanvas.width, exportCanvas.height);
+    doc.save(`${boardTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`);
+    toast.success('Downloaded whiteboard document (PDF) to device!');
+  };
+
+  const handleExportJSON = () => {
+    const project = {
+      app: 'OneReal_Whiteboard',
+      version: 1,
+      title: boardTitle,
+      exportedAt: new Date().toISOString(),
+      elements,
+    };
+    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${boardTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Downloaded board project (.json) to device storage!');
+  };
+
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (Array.isArray(data.elements)) {
+          setElements(data.elements);
+          setHistory([data.elements]);
+          setHistoryStep(0);
+          if (data.title) setBoardTitle(data.title);
+          toast.success(`Imported "${data.title || 'board'}" from device!`);
+        } else {
+          toast.error('Invalid whiteboard file format');
+        }
+      } catch (err) {
+        toast.error('Failed to parse whiteboard project file');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   // Cloud Save
@@ -432,181 +522,248 @@ export default function WhiteboardPage() {
 
   return (
     <div className={cn(
-      "flex flex-col h-[calc(100vh-6.5rem)] space-y-3",
-      isFullscreen && "fixed inset-0 z-50 bg-background p-4 h-screen"
+      "flex flex-col h-[calc(100vh-6.5rem)] space-y-2 sm:space-y-3",
+      isFullscreen && "fixed inset-0 z-50 bg-background p-2 sm:p-4 h-screen"
     )}>
-      {/* Top Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl border border-border bg-card/70 backdrop-blur-md shadow-sm">
-        {/* Title & Saved indicator */}
-        <div className="flex items-center gap-2 min-w-[200px]">
-          <Input
-            value={boardTitle}
-            onChange={e => setBoardTitle(e.target.value)}
-            className="h-8 font-heading font-semibold text-sm max-w-[240px] bg-transparent border-transparent hover:border-border focus:border-primary"
-            placeholder="Board title..."
-          />
-          {currentBoardId && (
-            <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20">
-              Synced
-            </Badge>
-          )}
-        </div>
-
-        {/* Primary Tool Buttons */}
-        <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border">
-          {[
-            { id: 'pen', icon: Pencil, label: 'Pen' },
-            { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
-            { id: 'eraser', icon: Eraser, label: 'Eraser' },
-            { id: 'line', icon: Minus, label: 'Line' },
-            { id: 'arrow', icon: ArrowRight, label: 'Arrow' },
-            { id: 'rect', icon: Square, label: 'Rectangle' },
-            { id: 'circle', icon: Circle, label: 'Circle' },
-            { id: 'triangle', icon: Triangle, label: 'Triangle' },
-            { id: 'text', icon: Type, label: 'Text' },
-          ].map(tool => {
-            const Icon = tool.icon;
-            const isActive = currentTool === tool.id;
-            return (
-              <Button
-                key={tool.id}
-                variant={isActive ? "default" : "ghost"}
-                size="icon"
-                className={cn("h-8 w-8 rounded-lg", isActive && "shadow-sm")}
-                onClick={() => setCurrentTool(tool.id as Tool)}
-                title={tool.label}
-              >
-                <Icon className="w-4 h-4" />
-              </Button>
-            );
-          })}
-        </div>
-
-        {/* Color Palette & Stroke Size */}
-        <div className="flex items-center gap-2">
-          {/* Color Selector */}
-          <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-xl border border-border">
-            {COLORS.slice(0, 7).map(c => (
-              <button
-                key={c}
-                type="button"
-                className={cn(
-                  "w-5 h-5 rounded-full border border-black/10 transition-transform",
-                  currentColor === c && "scale-125 ring-2 ring-primary ring-offset-1"
-                )}
-                style={{ backgroundColor: c }}
-                onClick={() => setCurrentColor(c)}
-              />
-            ))}
-            <input
-              type="color"
-              value={currentColor}
-              onChange={e => setCurrentColor(e.target.value)}
-              className="w-5 h-5 rounded-full cursor-pointer bg-transparent border-0"
-              title="Custom Color"
+      {/* Top Toolbar Container */}
+      <div className="flex flex-col gap-2 p-2 sm:p-3 rounded-2xl border border-border bg-card/70 backdrop-blur-md shadow-sm">
+        {/* Row 1: Title, Sync status & Action Controls */}
+        <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+          {/* Title & Saved indicator */}
+          <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
+            <Input
+              value={boardTitle}
+              onChange={e => setBoardTitle(e.target.value)}
+              className="h-8 font-heading font-semibold text-xs sm:text-sm max-w-[140px] xs:max-w-[200px] sm:max-w-[260px] bg-transparent border-transparent hover:border-border focus:border-primary px-2"
+              placeholder="Board title..."
             />
+            {currentBoardId && (
+              <Badge variant="outline" className="text-[9px] sm:text-[10px] bg-primary/10 text-primary border-primary/20 shrink-0">
+                Synced
+              </Badge>
+            )}
           </div>
 
-          {/* Stroke Width Selector */}
-          <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-xl border border-border">
-            {STROKE_WIDTHS.map(w => (
-              <button
-                key={w}
-                type="button"
-                className={cn(
-                  "h-6 w-6 rounded-lg flex items-center justify-center text-xs font-bold transition-all",
-                  currentWidth === w ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                )}
-                onClick={() => setCurrentWidth(w)}
-              >
-                <div
-                  className="rounded-full bg-current"
-                  style={{ width: Math.max(w / 2, 3), height: Math.max(w / 2, 3) }}
-                />
-              </button>
-            ))}
+          {/* Action Controls (Undo, Redo, Grid, Clear, Library, Save, Download Dropdown, Fullscreen) */}
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 sm:h-8 sm:w-8"
+              disabled={historyStep < 0}
+              onClick={handleUndo}
+              title="Undo"
+            >
+              <Undo className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 sm:h-8 sm:w-8"
+              disabled={historyStep >= history.length - 1}
+              onClick={handleRedo}
+              title="Redo"
+            >
+              <Redo className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </Button>
+            <Button
+              variant={showGrid ? "secondary" : "ghost"}
+              size="icon"
+              className="h-7 w-7 sm:h-8 sm:w-8"
+              onClick={() => setShowGrid(g => !g)}
+              title="Toggle Math Grid"
+            >
+              <Grid className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 sm:h-8 sm:w-8 text-destructive hover:bg-destructive/10"
+              onClick={handleClear}
+              title="Clear Board"
+            >
+              <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </Button>
+
+            <div className="h-4 w-px bg-border mx-0.5 hidden xs:block" />
+
+            {/* Cloud Library Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 sm:h-8 gap-1 text-xs hidden sm:inline-flex"
+              onClick={handleOpenLibrary}
+            >
+              <FolderOpen className="w-3.5 h-3.5" /> Library
+            </Button>
+
+            {/* Save to Cloud Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 sm:h-8 gap-1 text-xs px-2 sm:px-3"
+              onClick={() => setShowSaveDialog(true)}
+              title="Save to Cloud"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span className="hidden xs:inline">Save</span>
+            </Button>
+
+            {/* Download / Export Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="h-7 sm:h-8 gap-1 text-xs px-2 sm:px-3 shadow-sm font-semibold"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden xs:inline">Download</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60 p-1.5 shadow-xl border-border">
+                <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Save to Local Storage
+                </div>
+                <DropdownMenuItem onClick={handleExportPNG} className="cursor-pointer gap-2 py-2">
+                  <Download className="w-4 h-4 text-primary" />
+                  <div>
+                    <p className="font-semibold text-xs">Download PNG Image</p>
+                    <p className="text-[10px] text-muted-foreground">High resolution image file</p>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF} className="cursor-pointer gap-2 py-2">
+                  <FileText className="w-4 h-4 text-rose-500" />
+                  <div>
+                    <p className="font-semibold text-xs">Download PDF Document</p>
+                    <p className="text-[10px] text-muted-foreground">Printable document sheet</p>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportJSON} className="cursor-pointer gap-2 py-2">
+                  <Save className="w-4 h-4 text-emerald-500" />
+                  <div>
+                    <p className="font-semibold text-xs">Download Board (.json)</p>
+                    <p className="text-[10px] text-muted-foreground">Save editable project locally</p>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()} className="cursor-pointer gap-2 py-2">
+                  <Upload className="w-4 h-4 text-indigo-500" />
+                  <div>
+                    <p className="font-semibold text-xs">Open from Device (.json)</p>
+                    <p className="text-[10px] text-muted-foreground">Load local board project file</p>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="sm:hidden" />
+                <DropdownMenuItem onClick={handleOpenLibrary} className="cursor-pointer gap-2 py-2 sm:hidden">
+                  <FolderOpen className="w-4 h-4 text-amber-500" />
+                  <div>
+                    <p className="font-semibold text-xs">Whiteboard Library</p>
+                    <p className="text-[10px] text-muted-foreground">Browse saved cloud boards</p>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Hidden File Input for Device Project Import */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImportJSON}
+              accept=".json"
+              className="hidden"
+            />
+
+            {/* Fullscreen Toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 sm:h-8 sm:w-8"
+              onClick={() => setIsFullscreen(f => !f)}
+              title={isFullscreen ? "Exit Fullscreen" : "Presenter Fullscreen"}
+            >
+              {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+            </Button>
           </div>
         </div>
 
-        {/* Action Controls (Undo, Redo, Grid, Clear, Save, Export) */}
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            disabled={historyStep < 0}
-            onClick={handleUndo}
-            title="Undo"
-          >
-            <Undo className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            disabled={historyStep >= history.length - 1}
-            onClick={handleRedo}
-            title="Redo"
-          >
-            <Redo className="w-4 h-4" />
-          </Button>
-          <Button
-            variant={showGrid ? "secondary" : "ghost"}
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setShowGrid(g => !g)}
-            title="Toggle Math Grid"
-          >
-            <Grid className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive hover:bg-destructive/10"
-            onClick={handleClear}
-            title="Clear Board"
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
+        {/* Row 2: Tool Buttons, Color Palette & Stroke Size (Horizontally swipeable on phone) */}
+        <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 pt-1 border-t border-border/40 scrollbar-none">
+          {/* Primary Tool Buttons */}
+          <div className="flex items-center gap-0.5 sm:gap-1 bg-muted/40 p-1 rounded-xl border border-border shrink-0">
+            {[
+              { id: 'pen', icon: Pencil, label: 'Pen' },
+              { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
+              { id: 'eraser', icon: Eraser, label: 'Eraser' },
+              { id: 'line', icon: Minus, label: 'Line' },
+              { id: 'arrow', icon: ArrowRight, label: 'Arrow' },
+              { id: 'rect', icon: Square, label: 'Rectangle' },
+              { id: 'circle', icon: Circle, label: 'Circle' },
+              { id: 'triangle', icon: Triangle, label: 'Triangle' },
+              { id: 'text', icon: Type, label: 'Text' },
+            ].map(tool => {
+              const Icon = tool.icon;
+              const isActive = currentTool === tool.id;
+              return (
+                <Button
+                  key={tool.id}
+                  variant={isActive ? "default" : "ghost"}
+                  size="icon"
+                  className={cn("h-7 w-7 sm:h-8 sm:w-8 rounded-lg shrink-0", isActive && "shadow-sm")}
+                  onClick={() => setCurrentTool(tool.id as Tool)}
+                  title={tool.label}
+                >
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </Button>
+              );
+            })}
+          </div>
 
-          <div className="h-4 w-px bg-border mx-1" />
+          {/* Color Palette & Stroke Size */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Color Selector */}
+            <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-xl border border-border">
+              {COLORS.slice(0, 7).map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  className={cn(
+                    "w-4 h-4 sm:w-5 sm:h-5 rounded-full border border-black/10 transition-transform",
+                    currentColor === c && "scale-125 ring-2 ring-primary ring-offset-1"
+                  )}
+                  style={{ backgroundColor: c }}
+                  onClick={() => setCurrentColor(c)}
+                />
+              ))}
+              <input
+                type="color"
+                value={currentColor}
+                onChange={e => setCurrentColor(e.target.value)}
+                className="w-4 h-4 sm:w-5 sm:h-5 rounded-full cursor-pointer bg-transparent border-0"
+                title="Custom Color"
+              />
+            </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1 text-xs"
-            onClick={handleOpenLibrary}
-          >
-            <FolderOpen className="w-3.5 h-3.5" /> Library
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1 text-xs"
-            onClick={() => setShowSaveDialog(true)}
-          >
-            <Save className="w-3.5 h-3.5" /> Save
-          </Button>
-
-          <Button
-            variant="default"
-            size="sm"
-            className="h-8 gap-1 text-xs shadow-sm"
-            onClick={handleExportPNG}
-          >
-            <Download className="w-3.5 h-3.5" /> Export PNG
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setIsFullscreen(f => !f)}
-            title={isFullscreen ? "Exit Fullscreen" : "Presenter Fullscreen"}
-          >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </Button>
+            {/* Stroke Width Selector */}
+            <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-xl border border-border">
+              {STROKE_WIDTHS.map(w => (
+                <button
+                  key={w}
+                  type="button"
+                  className={cn(
+                    "h-6 w-6 rounded-lg flex items-center justify-center text-xs font-bold transition-all",
+                    currentWidth === w ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                  )}
+                  onClick={() => setCurrentWidth(w)}
+                >
+                  <div
+                    className="rounded-full bg-current"
+                    style={{ width: Math.max(w / 2, 2.5), height: Math.max(w / 2, 2.5) }}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

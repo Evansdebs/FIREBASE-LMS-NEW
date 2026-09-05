@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { 
   Plus, Search, StickyNote, Trash2, Edit3, 
   ChevronRight, Calendar, Tag, MoreVertical,
   BookOpen, Clock, AlertCircle, FileText, Share2, 
   Lock, Unlock, ChevronLeft, Palette, Book,
-  Bookmark, Sparkles, Copy, Download, Check
+  Bookmark, Sparkles, Copy, Download, Check,
+  Save, Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,6 +102,7 @@ export default function NotesPage() {
   const [activeTab, setActiveTab] = useState<'personal' | 'shared'>('personal');
   const [selectedNotebook, setSelectedNotebook] = useState<string | null>(null);
   const [showRecorder, setShowRecorder] = useState(false);
+  const notesFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [noteForm, setNoteForm] = useState({
     title: '',
@@ -284,39 +286,177 @@ export default function NotesPage() {
     const doc = new jsPDF();
     
     // Header
-    doc.setFontSize(22);
+    doc.setFontSize(20);
     doc.setTextColor(79, 70, 229); // Premium indigo
     doc.text(note.notebook || 'Notebook Pages', 20, 20);
     
     doc.setFontSize(10);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Subject: ${note.course?.title || 'Personal notes'} | Created: ${new Date(note.createdAt).toLocaleDateString()}`, 20, 28);
+    const dateStr = note.createdAt ? new Date(note.createdAt).toLocaleDateString() : new Date().toLocaleDateString();
+    doc.text(`Subject: ${note.course?.title || 'Personal notes'} | Created: ${dateStr}`, 20, 28);
     
     doc.setDrawColor(226, 232, 240);
     doc.line(20, 32, 190, 32);
     
     // Title
-    doc.setFontSize(18);
+    doc.setFontSize(16);
     doc.setTextColor(30, 41, 59);
-    doc.text(note.title, 20, 45);
+    doc.text(note.title || 'Untitled Note', 20, 42);
     
     doc.setFontSize(10);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Category: ${note.category} | Style: ${note.style}`, 20, 52);
+    doc.text(`Category: ${note.category} | Style: ${note.style}`, 20, 49);
     
-    // Content
-    doc.setFontSize(12);
+    // Content body with pagination
+    doc.setFontSize(11);
     doc.setTextColor(51, 65, 85);
-    const splitText = doc.splitTextToSize(note.content, 170);
-    doc.text(splitText, 20, 65);
+    const splitText = doc.splitTextToSize(note.content || '', 170);
+    
+    let cursorY = 60;
+    const pageHeight = 280;
+    for (let i = 0; i < splitText.length; i++) {
+      if (cursorY > pageHeight) {
+        doc.addPage();
+        cursorY = 20;
+      }
+      doc.text(splitText[i], 20, cursorY);
+      cursorY += 6;
+    }
     
     // Save
-    doc.save(`${note.title.replace(/\s+/g, '_')}_notes.pdf`);
+    doc.save(`${(note.title || 'note').replace(/[^a-zA-Z0-9_-]/g, '_')}_notes.pdf`);
     
     toast({
       title: 'Success',
-      description: 'Notebook page exported successfully.',
+      description: 'Downloaded note as PDF to your local device.',
     });
+  };
+
+  const handleDownloadText = (note: Note) => {
+    const textContent = `========================================
+${note.title || 'Untitled Note'}
+========================================
+Binder: ${note.notebook}
+Category: ${note.category}
+Date: ${new Date(note.updatedAt || note.createdAt || Date.now()).toLocaleString()}
+${note.course ? `Course: ${note.course.title}\n` : ''}----------------------------------------
+
+${note.content || ''}
+`;
+    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(note.title || 'note').replace(/[^a-zA-Z0-9_-]/g, '_')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: 'Success',
+      description: 'Downloaded note as plain text (.txt) to device.',
+    });
+  };
+
+  const handleDownloadJSON = (note: Note) => {
+    const blob = new Blob([JSON.stringify(note, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(note.title || 'note').replace(/[^a-zA-Z0-9_-]/g, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: 'Success',
+      description: 'Downloaded note (.json) to device storage.',
+    });
+  };
+
+  const handleExportAllNotesJSON = () => {
+    if (notes.length === 0) {
+      toast({
+        title: 'Notice',
+        description: 'No notes available to export.',
+      });
+      return;
+    }
+    const exportData = {
+      app: 'OneReal_LMS_Notes',
+      exportedAt: new Date().toISOString(),
+      user: {
+        id: user?.id,
+        name: user?.fullName || user?.name,
+        role: user?.role,
+      },
+      count: notes.length,
+      notes,
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `my_notes_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: 'Success',
+      description: `Exported ${notes.length} note(s) to local storage.`,
+    });
+  };
+
+  const handleImportNotesJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        const importedList = Array.isArray(data) ? data : (data.notes && Array.isArray(data.notes) ? data.notes : null);
+        if (!importedList || importedList.length === 0) {
+          toast({
+            title: 'Error',
+            description: 'No valid notes found in this backup file.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        let count = 0;
+        for (const item of importedList) {
+          if (item.title && item.content) {
+            await createNote({
+              title: item.title,
+              content: item.content,
+              category: item.category || 'General',
+              notebook: item.notebook || 'Imported Notes',
+              style: item.style || 'ruled',
+              color: item.color || '#fffdf5',
+              userId: user.id as string,
+              isShared: false,
+              courseId: item.courseId || undefined,
+            });
+            count++;
+          }
+        }
+        await fetchNotes();
+        toast({
+          title: 'Success',
+          description: `Imported ${count} note(s) to your binder!`,
+        });
+      } catch (err: any) {
+        toast({
+          title: 'Import Failed',
+          description: 'Failed to read note file.',
+          variant: 'destructive',
+        });
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   // Filter notebooks by tab and search
@@ -351,37 +491,73 @@ export default function NotesPage() {
             <span className="p-1.5 rounded-lg bg-primary/10 text-primary">
               <Book className="w-6 h-6" />
             </span>
-            <h1 className="text-3xl font-heading font-bold text-foreground">Interactive Notebooks</h1>
+            <h1 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">Interactive Notebooks</h1>
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-xs sm:text-sm text-muted-foreground max-w-2xl">
             {isTeacher 
               ? 'Draft interactive lecture pages, design custom stationery backgrounds, and publish study binders to your enrolled classes.' 
               : 'Write personal journals, organize course binders, and access rich handwritten notebooks shared by your instructors.'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* Export / Backup All to Local Storage */}
           <Button
             variant="outline"
-            className="shadow-sm font-bold gap-2 border-primary/30 text-primary hover:bg-primary/10"
+            size="sm"
+            onClick={handleExportAllNotesJSON}
+            className="shadow-sm font-bold gap-1.5 text-xs sm:text-sm h-9"
+            title="Download all notes to device"
+          >
+            <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
+            <span className="hidden xs:inline">Backup All</span>
+            <span className="xs:hidden">Backup</span>
+          </Button>
+
+          {/* Import Notes from device */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => notesFileInputRef.current?.click()}
+            className="shadow-sm font-bold gap-1.5 text-xs sm:text-sm h-9"
+            title="Import notes from JSON file"
+          >
+            <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500" />
+            <span className="hidden xs:inline">Import</span>
+          </Button>
+          <input
+            type="file"
+            ref={notesFileInputRef}
+            onChange={handleImportNotesJSON}
+            accept=".json"
+            className="hidden"
+          />
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="shadow-sm font-bold gap-1.5 border-primary/30 text-primary hover:bg-primary/10 text-xs sm:text-sm h-9"
             onClick={() => setShowRecorder(true)}
           >
-            <Mic className="w-4 h-4 text-primary" />
-            Record Voice Memo
+            <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
+            <span className="hidden sm:inline">Record Voice Memo</span>
+            <span className="sm:hidden">Voice Memo</span>
           </Button>
-          <Button onClick={() => openModal()} className="shadow-lg hover:shadow-primary/20 transition-all font-bold px-5">
-            <Plus className="w-5 h-5 mr-2" />
-            Write Note Page
+
+          <Button onClick={() => openModal()} size="sm" className="shadow-lg hover:shadow-primary/20 transition-all font-bold px-3 sm:px-5 text-xs sm:text-sm h-9">
+            <Plus className="w-4 h-4 mr-1 sm:mr-1.5" />
+            Write Note
           </Button>
         </div>
       </div>
 
       {/* Tabs Control */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/30 p-2 rounded-xl border border-border/40">
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-muted/30 p-2 rounded-xl border border-border/40">
+        <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto overflow-x-auto pb-0.5 no-scrollbar">
           <Button
             variant={activeTab === 'personal' ? 'default' : 'ghost'}
+            size="sm"
             className={cn(
-              "w-full sm:w-auto font-bold gap-2 rounded-lg transition-all",
+              "flex-1 sm:flex-initial font-bold gap-1.5 rounded-lg transition-all text-xs sm:text-sm h-8 sm:h-9 whitespace-nowrap",
               activeTab === 'personal' && "shadow-sm"
             )}
             onClick={() => {
@@ -390,13 +566,14 @@ export default function NotesPage() {
               setViewingNote(null);
             }}
           >
-            <BookOpen className="w-4 h-4" />
+            <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             📓 My Notebooks ({notes.filter(n => n.isPersonal).length})
           </Button>
           <Button
             variant={activeTab === 'shared' ? 'default' : 'ghost'}
+            size="sm"
             className={cn(
-              "w-full sm:w-auto font-bold gap-2 rounded-lg transition-all",
+              "flex-1 sm:flex-initial font-bold gap-1.5 rounded-lg transition-all text-xs sm:text-sm h-8 sm:h-9 whitespace-nowrap",
               activeTab === 'shared' && "shadow-sm"
             )}
             onClick={() => {
@@ -405,16 +582,16 @@ export default function NotesPage() {
               setViewingNote(null);
             }}
           >
-            <Share2 className="w-4 h-4" />
-            {isTeacher ? '🎓 Published Class Notes' : '🎒 Teacher Lecture Notes'} ({notes.filter(n => !n.isPersonal).length})
+            <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {isTeacher ? '🎓 Class Notes' : '🎒 Lecture Notes'} ({notes.filter(n => !n.isPersonal).length})
           </Button>
         </div>
 
-        <div className="relative w-full sm:w-80">
+        <div className="relative w-full sm:w-72 md:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
-            placeholder="Search notebook titles or content..." 
-            className="pl-10 bg-background/50 border-border/50 focus:bg-background transition-colors w-full"
+            placeholder="Search notes or binders..." 
+            className="pl-9 h-8 sm:h-9 text-xs sm:text-sm bg-background/50 border-border/50 focus:bg-background transition-colors w-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -422,7 +599,7 @@ export default function NotesPage() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 py-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 py-10">
           {[1, 2, 3, 4].map(i => (
             <Card key={i} className="animate-pulse bg-card/40 border-border/40 h-64 rounded-2xl" />
           ))}
@@ -436,26 +613,28 @@ export default function NotesPage() {
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
-              className="space-y-6"
+              className="space-y-4 sm:space-y-6"
             >
               {/* Note Page toolbar */}
-              <div className="flex items-center justify-between bg-card/50 p-3 rounded-xl border border-border/40 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-card/50 p-2 sm:p-3 rounded-xl border border-border/40 shadow-sm">
                 <Button 
                   variant="ghost" 
+                  size="sm"
                   onClick={() => setViewingNote(null)} 
-                  className="font-semibold gap-1.5 hover:bg-muted"
+                  className="font-semibold gap-1 hover:bg-muted text-xs sm:text-sm h-8"
                 >
-                  <ChevronLeft className="w-5 h-5" />
-                  Back to Binders
+                  <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="hidden xs:inline">Back to Binders</span>
+                  <span className="xs:hidden">Back</span>
                 </Button>
                 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                   {/* Font picker */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="font-semibold gap-1.5 border-border/50">
-                        <Palette className="w-4 h-4 text-primary" />
-                        Font Styles
+                      <Button variant="outline" size="sm" className="font-semibold gap-1.5 border-border/50 text-xs h-8 px-2 sm:px-3">
+                        <Palette className="w-3.5 h-3.5 text-primary" />
+                        <span className="hidden sm:inline">Font Styles</span>
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56 border-border shadow-xl">
@@ -473,18 +652,47 @@ export default function NotesPage() {
                   </DropdownMenu>
 
                   {/* TTS Button */}
-                  <TTSButton text={viewingNote.content} className="h-9 w-9 bg-primary/10 hover:bg-primary/20 text-primary border-none shadow-sm" />
+                  <TTSButton text={viewingNote.content} className="h-8 w-8 bg-primary/10 hover:bg-primary/20 text-primary border-none shadow-sm" />
 
-                  {/* PDF Download */}
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => handleDownloadPDF(viewingNote)}
-                    className="font-bold gap-1.5"
-                  >
-                    <Download className="w-4 h-4" />
-                    PDF
-                  </Button>
+                  {/* Download Menu */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="font-bold gap-1 text-xs h-8 px-2 sm:px-3"
+                      >
+                        <Download className="w-3.5 h-3.5 text-primary" />
+                        Download
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56 p-1.5 shadow-xl border-border">
+                      <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                        Download to Local Device
+                      </div>
+                      <DropdownMenuItem onClick={() => handleDownloadPDF(viewingNote)} className="cursor-pointer gap-2 py-2">
+                        <FileText className="w-4 h-4 text-rose-500" />
+                        <div>
+                          <p className="font-semibold text-xs">Download PDF Document</p>
+                          <p className="text-[10px] text-muted-foreground">Printable notebook sheet</p>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDownloadText(viewingNote)} className="cursor-pointer gap-2 py-2">
+                        <Bookmark className="w-4 h-4 text-blue-500" />
+                        <div>
+                          <p className="font-semibold text-xs">Download Plain Text (.txt)</p>
+                          <p className="text-[10px] text-muted-foreground">Readable text & markdown</p>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDownloadJSON(viewingNote)} className="cursor-pointer gap-2 py-2">
+                        <Save className="w-4 h-4 text-emerald-500" />
+                        <div>
+                          <p className="font-semibold text-xs">Download Note JSON (.json)</p>
+                          <p className="text-[10px] text-muted-foreground">Local file backup</p>
+                        </div>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
 
                   {/* Clone note for student */}
                   {isStudent && !viewingNote.isPersonal && (
@@ -492,10 +700,11 @@ export default function NotesPage() {
                       variant="outline" 
                       size="sm" 
                       onClick={() => handleCopyToPersonal(viewingNote)}
-                      className="font-bold gap-1.5 bg-success/15 hover:bg-success/20 border-success/30 text-success"
+                      className="font-bold gap-1 text-xs h-8 px-2 sm:px-3 bg-success/15 hover:bg-success/20 border-success/30 text-success"
                     >
-                      <Copy className="w-4 h-4" />
-                      Add to My Binder
+                      <Copy className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Add to My Binder</span>
+                      <span className="sm:hidden">Save</span>
                     </Button>
                   )}
 
@@ -503,7 +712,7 @@ export default function NotesPage() {
                   {(viewingNote.userId === user?.id) && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 border-border/50">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 border-border/50">
                           <MoreVertical className="w-4 h-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -525,20 +734,20 @@ export default function NotesPage() {
               </div>
 
               {/* Skeuomorphic Open Notebook Page */}
-              <div className="relative min-h-[600px] border border-border shadow-2xl rounded-2xl overflow-hidden bg-card transition-all duration-300">
+              <div className="relative min-h-[450px] sm:min-h-[600px] border border-border shadow-2xl rounded-2xl overflow-hidden bg-card transition-all duration-300">
                 {/* Visual Ring binder spiral spine on left margin */}
-                <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-muted/50 via-muted to-muted/10 border-r border-border/40 z-10 flex flex-col justify-around py-6 items-center shadow-inner pointer-events-none">
+                <div className="absolute left-0 top-0 bottom-0 w-5 sm:w-8 bg-gradient-to-r from-muted/50 via-muted to-muted/10 border-r border-border/40 z-10 flex flex-col justify-around py-3 sm:py-6 items-center shadow-inner pointer-events-none">
                   {Array.from({ length: 15 }).map((_, idx) => (
                     <div 
                       key={idx} 
-                      className="w-6 h-3 bg-gradient-to-b from-slate-300 via-slate-400 to-slate-500 rounded-full border border-slate-600 shadow-md transform -rotate-12"
+                      className="w-3.5 sm:w-6 h-2 sm:h-3 bg-gradient-to-b from-slate-300 via-slate-400 to-slate-500 rounded-full border border-slate-600 shadow-md transform -rotate-12"
                     />
                   ))}
                 </div>
 
                 {/* Notebook paper sheet */}
                 <div 
-                  className="pl-16 pr-8 pt-8 pb-16 min-h-[600px] select-text relative transition-all duration-300"
+                  className="pl-8 sm:pl-16 pr-3 sm:pr-8 pt-5 sm:pt-8 pb-10 sm:pb-16 min-h-[450px] sm:min-h-[600px] select-text relative transition-all duration-300"
                   style={{
                     backgroundColor: getNotebookTheme(viewingNote.color).bg,
                     color: getNotebookTheme(viewingNote.color).text,
@@ -555,7 +764,7 @@ export default function NotesPage() {
                       }}
                     >
                       {/* Left vertical red margin line */}
-                      <div className="absolute left-14 top-0 bottom-0 w-[1px] bg-rose-400/50" />
+                      <div className="absolute left-6 sm:left-14 top-0 bottom-0 w-[1px] bg-rose-400/50" />
                     </div>
                   )}
 
@@ -903,18 +1112,18 @@ export default function NotesPage() {
 
       {/* Realistic Notebook Page Editor Modal */}
       <Dialog open={isModalOpen} onOpenChange={(open) => !open && closeModal()}>
-        <DialogContent className="sm:max-w-[750px] max-h-[92vh] overflow-hidden flex flex-col p-0 border-border bg-card shadow-2xl rounded-2xl">
-          <DialogHeader className="p-6 pb-2 border-b border-border/50 bg-muted/10">
-            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-              <StickyNote className="w-6 h-6 text-primary" />
+        <DialogContent className="w-[95vw] sm:max-w-[750px] max-h-[92vh] overflow-hidden flex flex-col p-0 border-border bg-card shadow-2xl rounded-2xl">
+          <DialogHeader className="p-4 sm:p-6 pb-2 border-b border-border/50 bg-muted/10">
+            <DialogTitle className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+              <StickyNote className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
               {editingNote ? 'Edit Notebook Page' : 'Rip New Page in Binder'}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm">
               Draft notes, customize stationery backgrounds, select cursive handwritings, and organize folders.
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 scrollbar-thin">
             <div className="space-y-4">
               {/* Notebook folder & Page title */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1057,12 +1266,12 @@ export default function NotesPage() {
                 <div className="relative border border-border/60 rounded-xl overflow-hidden shadow-inner">
                   {/* Visual Left Ruled Pink margin line inside editor */}
                   {noteForm.style === 'ruled' && (
-                    <div className="absolute left-10 top-0 bottom-0 w-[1.5px] bg-rose-300 pointer-events-none opacity-50 z-10" />
+                    <div className="absolute left-7 sm:left-10 top-0 bottom-0 w-[1.5px] bg-rose-300 pointer-events-none opacity-50 z-10" />
                   )}
                   <Textarea 
                     placeholder="Write detailed notes, math formulas, key takeaways..." 
                     className={cn(
-                      "min-h-[280px] bg-muted/20 focus:bg-background/95 transition-all resize-none leading-relaxed p-4 scrollbar-thin overflow-y-auto pl-12 border-none ring-0 focus-visible:ring-0 focus-visible:ring-offset-0",
+                      "min-h-[240px] sm:min-h-[280px] bg-muted/20 focus:bg-background/95 transition-all resize-none leading-relaxed p-3 sm:p-4 scrollbar-thin overflow-y-auto pl-9 sm:pl-12 border-none ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm sm:text-base",
                       noteForm.color === '#1e293b' ? 'text-slate-100' : 'text-slate-900'
                     )}
                     style={{ backgroundColor: noteForm.color }}
@@ -1075,7 +1284,7 @@ export default function NotesPage() {
 
             {/* Warning block about class notes */}
             {noteForm.isShared && (
-              <div className="p-4 bg-primary/10 rounded-xl border border-primary/20 flex items-center gap-3">
+              <div className="p-3 sm:p-4 bg-primary/10 rounded-xl border border-primary/20 flex items-center gap-3">
                 <AlertCircle className="w-5 h-5 text-primary shrink-0" />
                 <p className="text-xs text-muted-foreground leading-snug font-semibold">
                   This note is being published to a Course. Any updates will sync in real-time to your enroled students' binder portals.
@@ -1084,9 +1293,9 @@ export default function NotesPage() {
             )}
           </div>
 
-          <DialogFooter className="p-6 pt-2 border-t border-border/50 bg-muted/5">
-            <Button variant="ghost" onClick={closeModal} className="font-bold px-6">Cancel</Button>
-            <Button onClick={handleCreateOrUpdate} className="font-bold px-10 shadow-lg shadow-primary/20 transition-all">
+          <DialogFooter className="p-4 sm:p-6 pt-2 border-t border-border/50 bg-muted/5 flex flex-row items-center justify-end gap-2">
+            <Button variant="ghost" onClick={closeModal} className="font-bold px-4 sm:px-6">Cancel</Button>
+            <Button onClick={handleCreateOrUpdate} className="font-bold px-6 sm:px-10 shadow-lg shadow-primary/20 transition-all">
               {editingNote ? 'Save binder page' : 'Rip note page'}
             </Button>
           </DialogFooter>
