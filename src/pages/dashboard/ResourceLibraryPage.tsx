@@ -165,27 +165,27 @@ export default function ResourceLibraryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Resource Library</h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">
             {loading ? 'Loading...' : `${filtered.length} resource${filtered.length !== 1 ? 's' : ''} available`}
           </p>
         </div>
         {canManage && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
-              className="gap-2 border-primary/30 text-primary hover:bg-primary/10"
+              className="gap-2 border-primary/30 text-primary hover:bg-primary/10 text-xs sm:text-sm"
               onClick={() => setShowRecorder(true)}
             >
               <Mic className="w-4 h-4 text-primary" /> Studio Recorder
             </Button>
             <Dialog open={showUpload} onOpenChange={setShowUpload}>
               <DialogTrigger asChild>
-                <Button className="gap-2"><Plus className="w-4 h-4" /> Add Resource</Button>
+                <Button className="gap-2 text-xs sm:text-sm"><Plus className="w-4 h-4" /> Add Resource</Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="sm:max-w-lg">
                 <DialogHeader><DialogTitle className="font-heading">Add Resource / Material</DialogTitle></DialogHeader>
                 <UploadResourceForm onClose={() => setShowUpload(false)} onRefresh={fetchMaterials} isAdmin={isAdmin} />
               </DialogContent>
@@ -203,7 +203,7 @@ export default function ResourceLibraryPage() {
 
       {/* Edit dialog */}
       <Dialog open={showEdit} onOpenChange={setShowEdit}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle className="font-heading">Edit Resource</DialogTitle></DialogHeader>
           {activeResource && (
             <EditResourceForm
@@ -222,10 +222,10 @@ export default function ResourceLibraryPage() {
           <div className="flex flex-wrap gap-3">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search resources..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+              <Input placeholder="Search resources..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 text-sm" />
             </div>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[140px] text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
                 <SelectItem value="pdf">PDF</SelectItem>
@@ -239,7 +239,7 @@ export default function ResourceLibraryPage() {
             </Select>
             {subjects.length > 0 && (
               <Select value={subjectFilter} onValueChange={setSubjectFilter}>
-                <SelectTrigger className="w-[160px]"><SelectValue placeholder="All Subjects" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[160px] text-xs"><SelectValue placeholder="All Subjects" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Subjects</SelectItem>
                   {subjects.map((s: any) => (
@@ -443,8 +443,22 @@ export default function ResourceLibraryPage() {
 }
 
 // ─── UPLOAD FORM ──────────────────────────────────────────
+function detectTypeFromFileName(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  if (['pdf'].includes(ext)) return 'PDF';
+  if (['doc', 'docx'].includes(ext)) return 'WORD';
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'EXCEL';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'IMAGE';
+  if (['mp4', 'webm', 'mov', 'mkv'].includes(ext)) return 'VIDEO';
+  if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) return 'AUDIO';
+  if (['txt', 'md'].includes(ext)) return 'TEXT';
+  return 'PDF';
+}
+
+// ─── UPLOAD FORM ──────────────────────────────────────────
 function UploadResourceForm({ onClose, onRefresh, isAdmin }: { onClose: () => void; onRefresh: () => void; isAdmin: boolean }) {
   const [form, setForm] = useState({ title: '', type: 'PDF', externalUrl: '', topicId: '', textContent: '', isGlobal: false, description: '' });
+  const [sourceMode, setSourceMode] = useState<'file' | 'link'>('file');
   const [file, setFile] = useState<File | null>(null);
   const [topics, setTopics] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -460,6 +474,28 @@ function UploadResourceForm({ onClose, onRefresh, isAdmin }: { onClose: () => vo
     }).catch(() => {});
   }, [isAdmin]);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    if (selected.size > 8 * 1024 * 1024) {
+      toast.error(`File is ${(selected.size / 1024 / 1024).toFixed(1)}MB. Maximum allowed upload size is 8MB.`);
+      return;
+    }
+    const detected = detectTypeFromFileName(selected.name);
+    setForm(prev => ({
+      ...prev,
+      type: detected,
+      title: prev.title || selected.name.replace(/\.[^/.]+$/, '')
+    }));
+    setFile(selected);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setForm(prev => ({ ...prev, externalUrl: reader.result as string }));
+    };
+    reader.readAsDataURL(selected);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.isGlobal && !form.topicId) { toast.error('Please select a topic/module'); return; }
@@ -471,10 +507,12 @@ function UploadResourceForm({ onClose, onRefresh, isAdmin }: { onClose: () => vo
       setLoading(true);
       await createMaterial({
         title: form.title,
+        fileName: file?.name || form.title,
         type: form.type as any,
         topicId: form.topicId || undefined,
         isGlobal: form.isGlobal,
         fileUrl: form.externalUrl || undefined,
+        fileSize: file?.size,
         textContent: form.textContent || undefined,
         description: form.description || undefined,
       });
@@ -489,35 +527,58 @@ function UploadResourceForm({ onClose, onRefresh, isAdmin }: { onClose: () => vo
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 py-2 max-h-[70vh] overflow-auto px-1">
-      <div className="space-y-2"><Label>Title</Label><Input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="e.g. Intro to Algebra" required /></div>
-      <div className="space-y-2"><Label>Description (Optional - will be read by audio player)</Label><Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Briefly describe this resource" /></div>
-      <div className="grid grid-cols-2 gap-4">
+    <form onSubmit={handleSubmit} className="space-y-4 py-2 max-h-[75vh] overflow-y-auto px-1">
+      <div className="space-y-2">
+        <Label>Resource Title</Label>
+        <Input 
+          value={form.title} 
+          onChange={e => setForm(p => ({ ...p, title: e.target.value }))} 
+          placeholder="e.g. Intro to Genetics Notes" 
+          required 
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Description (Optional)</Label>
+        <Input 
+          value={form.description} 
+          onChange={e => setForm(p => ({ ...p, description: e.target.value }))} 
+          placeholder="Briefly describe what this resource covers" 
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Category / Type</Label>
           <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="PDF">PDF Document</SelectItem>
-              <SelectItem value="WORD">Word Document</SelectItem>
-              <SelectItem value="EXCEL">Excel Sheet</SelectItem>
+              <SelectItem value="WORD">Word Document (.docx)</SelectItem>
+              <SelectItem value="EXCEL">Excel Sheet (.xlsx)</SelectItem>
               <SelectItem value="IMAGE">Image / Graphic</SelectItem>
-              <SelectItem value="VIDEO">Video (URL/File)</SelectItem>
+              <SelectItem value="VIDEO">Video (File/URL)</SelectItem>
               <SelectItem value="AUDIO">Audio / Podcast</SelectItem>
               <SelectItem value="TEXT">Plain Text / Note</SelectItem>
             </SelectContent>
           </Select>
         </div>
+
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <Label>Topic / Module</Label>
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-              <input type="checkbox" checked={form.isGlobal} onChange={e => setForm(p => ({ ...p, isGlobal: e.target.checked, topicId: '' }))} className="rounded border-gray-300 w-3 h-3" />
+              <input 
+                type="checkbox" 
+                checked={form.isGlobal} 
+                onChange={e => setForm(p => ({ ...p, isGlobal: e.target.checked, topicId: '' }))} 
+                className="rounded border-gray-300 w-3.5 h-3.5" 
+              />
               <span>Global Resource</span>
             </label>
           </div>
           <Select disabled={form.isGlobal} value={form.topicId} onValueChange={v => setForm(p => ({ ...p, topicId: v }))}>
-            <SelectTrigger><SelectValue placeholder={form.isGlobal ? "N/A (Global)" : "Select topic"} /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder={form.isGlobal ? "N/A (Global Resource)" : "Select topic"} /></SelectTrigger>
             <SelectContent>
               {topics.length === 0 && <SelectItem value="none" disabled>No topics found</SelectItem>}
               {topics.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.courseName} › {t.title}</SelectItem>)}
@@ -528,24 +589,94 @@ function UploadResourceForm({ onClose, onRefresh, isAdmin }: { onClose: () => vo
 
       {form.type === 'TEXT' ? (
         <div className="space-y-2">
-          <Label>Content (Text)</Label>
+          <Label>Content (Text / Markdown)</Label>
           <Textarea
-            placeholder="Paste or type your content here..."
+            placeholder="Type or paste your lecture note or reference content here..."
             value={form.textContent}
             onChange={e => setForm(p => ({ ...p, textContent: e.target.value }))}
-            className="min-h-[200px]"
+            className="min-h-[160px] text-sm"
           />
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>File Upload / External URL</Label>
-            <Input placeholder="https://..." value={form.externalUrl} onChange={e => setForm(p => ({ ...p, externalUrl: e.target.value }))} />
+        <div className="space-y-3">
+          <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-lg w-fit border border-border">
+            <Button 
+              type="button" 
+              size="sm" 
+              variant={sourceMode === 'file' ? 'default' : 'ghost'} 
+              onClick={() => setSourceMode('file')} 
+              className="h-7 text-xs gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" /> Upload Local File
+            </Button>
+            <Button 
+              type="button" 
+              size="sm" 
+              variant={sourceMode === 'link' ? 'default' : 'ghost'} 
+              onClick={() => setSourceMode('link')} 
+              className="h-7 text-xs gap-1.5"
+            >
+              <Globe className="w-3.5 h-3.5" /> Web Link (URL)
+            </Button>
           </div>
+
+          {sourceMode === 'file' ? (
+            <div className="border-2 border-dashed border-border rounded-xl p-4 text-center hover:bg-muted/20 transition-colors">
+              <input 
+                type="file" 
+                id="upload-material-file" 
+                className="hidden" 
+                onChange={handleFileSelect}
+                accept={
+                  form.type === 'PDF' ? '.pdf' :
+                  form.type === 'WORD' ? '.doc,.docx' :
+                  form.type === 'EXCEL' ? '.xls,.xlsx,.csv' :
+                  form.type === 'IMAGE' ? 'image/*' :
+                  form.type === 'VIDEO' ? 'video/*' :
+                  form.type === 'AUDIO' ? 'audio/*' :
+                  '*'
+                }
+              />
+              {file || (form.externalUrl && form.externalUrl.startsWith('data:')) ? (
+                <div className="flex items-center justify-between gap-2 p-2.5 bg-primary/10 rounded-lg border border-primary/20">
+                  <div className="flex items-center gap-2 truncate">
+                    <FileText className="w-4 h-4 text-primary shrink-0" />
+                    <span className="text-xs font-semibold text-foreground truncate">{file?.name || 'Local file attached'}</span>
+                    {file && <span className="text-[10px] text-muted-foreground shrink-0">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>}
+                  </div>
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 text-destructive text-xs px-2" 
+                    onClick={() => { setFile(null); setForm(p => ({ ...p, externalUrl: '' })); }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ) : (
+                <label htmlFor="upload-material-file" className="cursor-pointer flex flex-col items-center gap-1.5 py-3">
+                  <Upload className="w-8 h-8 text-primary/70 mb-1" />
+                  <span className="text-xs font-semibold text-foreground">Click to choose a file from your device</span>
+                  <span className="text-[10px] text-muted-foreground">Supported: PDF, Word, Excel, Images, Video, Audio (Up to 8MB)</span>
+                </label>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>External Web Link / Storage URL</Label>
+              <Input 
+                placeholder="https://drive.google.com/... or https://..." 
+                value={form.externalUrl} 
+                onChange={e => setForm(p => ({ ...p, externalUrl: e.target.value }))} 
+              />
+              <p className="text-[10px] text-muted-foreground">You can paste Google Drive, Dropbox, YouTube, Vimeo, or direct file URLs.</p>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end gap-2 pt-2 border-t border-border">
         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
         <Button type="submit" disabled={loading} className="gap-2">
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Upload className="w-4 h-4" /> Add Resource</>}
@@ -566,6 +697,10 @@ function EditResourceForm({ resource, onClose, onRefresh, isAdmin }: { resource:
     isGlobal: resource.isGlobal || false,
     description: resource.description || '',
   });
+  const [sourceMode, setSourceMode] = useState<'file' | 'link'>(
+    resource.fileUrl && resource.fileUrl.startsWith('data:') ? 'file' : 'link'
+  );
+  const [file, setFile] = useState<File | null>(null);
   const [topics, setTopics] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -580,6 +715,28 @@ function EditResourceForm({ resource, onClose, onRefresh, isAdmin }: { resource:
     }).catch(() => {});
   }, [isAdmin]);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    if (selected.size > 8 * 1024 * 1024) {
+      toast.error(`File is ${(selected.size / 1024 / 1024).toFixed(1)}MB. Maximum allowed upload size is 8MB.`);
+      return;
+    }
+    const detected = detectTypeFromFileName(selected.name);
+    setForm(prev => ({
+      ...prev,
+      type: detected,
+      title: prev.title || selected.name.replace(/\.[^/.]+$/, '')
+    }));
+    setFile(selected);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setForm(prev => ({ ...prev, externalUrl: reader.result as string }));
+    };
+    reader.readAsDataURL(selected);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -590,10 +747,11 @@ function EditResourceForm({ resource, onClose, onRefresh, isAdmin }: { resource:
         topicId: form.topicId || undefined,
         isGlobal: form.isGlobal,
         fileUrl: form.externalUrl || undefined,
+        fileSize: file?.size || resource.fileSize,
         textContent: form.textContent || undefined,
         description: form.description || undefined,
       });
-      toast.success('Resource updated!');
+      toast.success('Resource updated successfully!');
       onRefresh();
       onClose();
     } catch (err: any) {
@@ -604,18 +762,26 @@ function EditResourceForm({ resource, onClose, onRefresh, isAdmin }: { resource:
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 py-2 max-h-[70vh] overflow-auto px-1">
-      <div className="space-y-2"><Label>Title</Label><Input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required /></div>
-      <div className="space-y-2"><Label>Description</Label><Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Briefly describe this resource" /></div>
-      <div className="grid grid-cols-2 gap-4">
+    <form onSubmit={handleSubmit} className="space-y-4 py-2 max-h-[75vh] overflow-y-auto px-1">
+      <div className="space-y-2">
+        <Label>Resource Title</Label>
+        <Input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Description</Label>
+        <Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Briefly describe this resource" />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Category / Type</Label>
           <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="PDF">PDF Document</SelectItem>
-              <SelectItem value="WORD">Word Document</SelectItem>
-              <SelectItem value="EXCEL">Excel Sheet</SelectItem>
+              <SelectItem value="WORD">Word Document (.docx)</SelectItem>
+              <SelectItem value="EXCEL">Excel Sheet (.xlsx)</SelectItem>
               <SelectItem value="IMAGE">Image / Graphic</SelectItem>
               <SelectItem value="VIDEO">Video (URL/File)</SelectItem>
               <SelectItem value="AUDIO">Audio / Podcast</SelectItem>
@@ -623,11 +789,12 @@ function EditResourceForm({ resource, onClose, onRefresh, isAdmin }: { resource:
             </SelectContent>
           </Select>
         </div>
+
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <Label>Topic / Module</Label>
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-              <input type="checkbox" checked={form.isGlobal} onChange={e => setForm(p => ({ ...p, isGlobal: e.target.checked, topicId: '' }))} className="rounded border-gray-300 w-3 h-3" />
+              <input type="checkbox" checked={form.isGlobal} onChange={e => setForm(p => ({ ...p, isGlobal: e.target.checked, topicId: '' }))} className="rounded border-gray-300 w-3.5 h-3.5" />
               <span>Global Resource</span>
             </label>
           </div>
@@ -647,17 +814,69 @@ function EditResourceForm({ resource, onClose, onRefresh, isAdmin }: { resource:
             placeholder="Paste or type your content here..."
             value={form.textContent}
             onChange={e => setForm(p => ({ ...p, textContent: e.target.value }))}
-            className="min-h-[200px]"
+            className="min-h-[160px] text-sm"
           />
         </div>
       ) : (
-        <div className="space-y-2">
-          <Label>URL / Link</Label>
-          <Input value={form.externalUrl} onChange={e => setForm(p => ({ ...p, externalUrl: e.target.value }))} placeholder="https://..." />
+        <div className="space-y-3">
+          <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-lg w-fit border border-border">
+            <Button 
+              type="button" 
+              size="sm" 
+              variant={sourceMode === 'file' ? 'default' : 'ghost'} 
+              onClick={() => setSourceMode('file')} 
+              className="h-7 text-xs gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" /> Local File
+            </Button>
+            <Button 
+              type="button" 
+              size="sm" 
+              variant={sourceMode === 'link' ? 'default' : 'ghost'} 
+              onClick={() => setSourceMode('link')} 
+              className="h-7 text-xs gap-1.5"
+            >
+              <Globe className="w-3.5 h-3.5" /> Web Link
+            </Button>
+          </div>
+
+          {sourceMode === 'file' ? (
+            <div className="border-2 border-dashed border-border rounded-xl p-4 text-center hover:bg-muted/20 transition-colors">
+              <input 
+                type="file" 
+                id="edit-material-file" 
+                className="hidden" 
+                onChange={handleFileSelect}
+              />
+              {file || (form.externalUrl && form.externalUrl.startsWith('data:')) ? (
+                <div className="flex items-center justify-between gap-2 p-2.5 bg-primary/10 rounded-lg border border-primary/20">
+                  <div className="flex items-center gap-2 truncate">
+                    <FileText className="w-4 h-4 text-primary shrink-0" />
+                    <span className="text-xs font-semibold text-foreground truncate">{file?.name || 'Local file attached'}</span>
+                    {file && <span className="text-[10px] text-muted-foreground shrink-0">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>}
+                  </div>
+                  <label htmlFor="edit-material-file" className="cursor-pointer text-xs text-primary font-medium hover:underline">
+                    Change
+                  </label>
+                </div>
+              ) : (
+                <label htmlFor="edit-material-file" className="cursor-pointer flex flex-col items-center gap-1.5 py-3">
+                  <Upload className="w-8 h-8 text-primary/70 mb-1" />
+                  <span className="text-xs font-semibold text-foreground">Click to upload or replace file</span>
+                  <span className="text-[10px] text-muted-foreground">PDF, Word, Excel, Images, Audio, Video (Up to 8MB)</span>
+                </label>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>URL / Link</Label>
+              <Input value={form.externalUrl} onChange={e => setForm(p => ({ ...p, externalUrl: e.target.value }))} placeholder="https://..." />
+            </div>
+          )}
         </div>
       )}
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end gap-2 pt-2 border-t border-border">
         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
         <Button type="submit" disabled={loading}>
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}

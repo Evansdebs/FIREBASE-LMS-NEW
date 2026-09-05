@@ -208,23 +208,91 @@ export default function SettingsPage() {
                   </div>
                   
                   <div className="space-y-4 pt-4">
-                    <Label className="text-sm font-bold block mb-3">Brand Colors</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                       <div className="p-3 rounded-xl border border-border space-y-2">
-                          <Label className="text-xs">Primary Color</Label>
+                    <Label className="text-sm font-bold block mb-3">Brand & Global Theme Colors</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                       <div className="p-3 rounded-xl border border-border space-y-2 bg-card/60">
+                          <Label className="text-xs font-semibold">Primary Theme Color</Label>
                           <div className="flex items-center gap-2">
-                            <input type="color" value={settings.primaryColor || '#6366f1'} onChange={e => setSettings({...settings, primaryColor: e.target.value})} className="w-8 h-8 rounded border-none cursor-pointer" />
-                            <Input value={settings.primaryColor} onChange={e => setSettings({...settings, primaryColor: e.target.value})} className="h-8 text-[10px] font-mono" />
+                            <input type="color" value={settings.primaryColor || '#6366f1'} onChange={e => setSettings({...settings, primaryColor: e.target.value})} className="w-8 h-8 rounded border-none cursor-pointer shrink-0" />
+                            <Input value={settings.primaryColor || '#6366f1'} onChange={e => setSettings({...settings, primaryColor: e.target.value})} className="h-8 text-xs font-mono uppercase" />
                           </div>
-                          <div className="w-full h-1.5 rounded-full mt-2" style={{ backgroundColor: settings.primaryColor }} />
+                          <div className="w-full h-1.5 rounded-full mt-2" style={{ backgroundColor: settings.primaryColor || '#6366f1' }} />
                        </div>
-                       <div className="p-3 rounded-xl border border-border space-y-2">
-                          <Label className="text-xs">Secondary (Accent)</Label>
+                       <div className="p-3 rounded-xl border border-border space-y-2 bg-card/60">
+                          <Label className="text-xs font-semibold">Secondary Accent Color</Label>
                           <div className="flex items-center gap-2">
-                             <input type="color" value={settings.secondaryColor || '#f59e0b'} onChange={e => setSettings({...settings, secondaryColor: e.target.value})} className="w-8 h-8 rounded border-none cursor-pointer" />
-                             <Input value={settings.secondaryColor} onChange={e => setSettings({...settings, secondaryColor: e.target.value})} className="h-8 text-[10px] font-mono" />
+                              <input type="color" value={settings.secondaryColor || '#f59e0b'} onChange={e => setSettings({...settings, secondaryColor: e.target.value})} className="w-8 h-8 rounded border-none cursor-pointer shrink-0" />
+                              <Input value={settings.secondaryColor || '#f59e0b'} onChange={e => setSettings({...settings, secondaryColor: e.target.value})} className="h-8 text-xs font-mono uppercase" />
                           </div>
-                          <div className="w-full h-1.5 rounded-full mt-2" style={{ backgroundColor: settings.secondaryColor }} />
+                          <div className="w-full h-1.5 rounded-full mt-2" style={{ backgroundColor: settings.secondaryColor || '#f59e0b' }} />
+                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                       <div className="p-3 rounded-xl border border-border space-y-2 bg-card/60">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-semibold">Global Text (Light Theme)</Label>
+                            <Button 
+                              type="button" 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-5 text-[10px] text-muted-foreground px-1"
+                              onClick={() => setSettings({ ...settings, textColorLight: '#0f172a' })}
+                            >
+                              Reset Default
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="color" 
+                              value={settings.textColorLight || '#0f172a'} 
+                              onChange={e => setSettings({...settings, textColorLight: e.target.value})} 
+                              className="w-8 h-8 rounded border-none cursor-pointer shrink-0" 
+                            />
+                            <Input 
+                              value={settings.textColorLight || '#0f172a'} 
+                              onChange={e => setSettings({...settings, textColorLight: e.target.value})} 
+                              className="h-8 text-xs font-mono uppercase" 
+                            />
+                          </div>
+                          <div className="p-2 rounded bg-slate-100 border border-slate-200 mt-2">
+                            <span className="text-xs font-medium" style={{ color: settings.textColorLight || '#0f172a' }}>
+                              Light mode sample text
+                            </span>
+                          </div>
+                       </div>
+
+                       <div className="p-3 rounded-xl border border-border space-y-2 bg-card/60">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-semibold">Global Text (Dark Theme)</Label>
+                            <Button 
+                              type="button" 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-5 text-[10px] text-muted-foreground px-1"
+                              onClick={() => setSettings({ ...settings, textColorDark: '#f8fafc' })}
+                            >
+                              Reset Default
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="color" 
+                              value={settings.textColorDark || '#f8fafc'} 
+                              onChange={e => setSettings({...settings, textColorDark: e.target.value})} 
+                              className="w-8 h-8 rounded border-none cursor-pointer shrink-0" 
+                            />
+                            <Input 
+                              value={settings.textColorDark || '#f8fafc'} 
+                              onChange={e => setSettings({...settings, textColorDark: e.target.value})} 
+                              className="h-8 text-xs font-mono uppercase" 
+                            />
+                          </div>
+                          <div className="p-2 rounded bg-slate-900 border border-slate-800 mt-2">
+                            <span className="text-xs font-medium" style={{ color: settings.textColorDark || '#f8fafc' }}>
+                              Dark mode sample text
+                            </span>
+                          </div>
                        </div>
                     </div>
                   </div>

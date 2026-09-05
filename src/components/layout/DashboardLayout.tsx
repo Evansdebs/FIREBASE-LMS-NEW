@@ -55,9 +55,22 @@ export default function DashboardLayout() {
             --accent: ${settings.secondaryColor || '#f59e0b'};
             --accent-foreground: 210 40% 98%;
           }
-          .text-primary { color: ${settings.primaryColor} !important; }
-          .bg-primary { background-color: ${settings.primaryColor} !important; }
-          .border-primary { border-color: ${settings.primaryColor} !important; }
+          ${settings.textColorLight ? `
+            :root:not(.dark), body:not(.dark), .light {
+              color: ${settings.textColorLight} !important;
+            }
+            :root:not(.dark) .text-foreground, body:not(.dark) .text-foreground {
+              color: ${settings.textColorLight} !important;
+            }
+          ` : ''}
+          ${settings.textColorDark ? `
+            .dark, .dark body, .dark .text-foreground {
+              color: ${settings.textColorDark} !important;
+            }
+          ` : ''}
+          .text-primary { color: ${settings.primaryColor || '#6366f1'} !important; }
+          .bg-primary { background-color: ${settings.primaryColor || '#6366f1'} !important; }
+          .border-primary { border-color: ${settings.primaryColor || '#6366f1'} !important; }
         `}} />
       )}
       {/* Backdrop for mobile */}

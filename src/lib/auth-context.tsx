@@ -90,12 +90,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const normalized = normalizeFirestoreUser(userData, fbUser.uid, fbUser.email || '');
             setState({ user: normalized, isAuthenticated: true, isLoading: false });
           } else {
+            // Brief pause and re-check to avoid overwriting newly created profiles
+            await new Promise(res => setTimeout(res, 500));
+            const recheckSnap = await getDoc(userDocRef);
+            if (recheckSnap.exists()) {
+              const userData = recheckSnap.data();
+              const normalized = normalizeFirestoreUser(userData, fbUser.uid, fbUser.email || '');
+              setState({ user: normalized, isAuthenticated: true, isLoading: false });
+              return;
+            }
+
             // Profile doc doesn't exist yet, create baseline
             const baselineData = {
               id: fbUser.uid,
               email: fbUser.email || '',
               name: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'User'),
               role: 'STUDENT',
+              isActive: true,
               createdAt: new Date().toISOString()
             };
             await setDoc(userDocRef, baselineData);

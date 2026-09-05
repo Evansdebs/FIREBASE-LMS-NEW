@@ -7,14 +7,16 @@ import {
   updateDoc, deleteDoc, query, where, orderBy, writeBatch,
   serverTimestamp, Timestamp
 } from 'firebase/firestore';
+import { initializeApp, deleteApp } from 'firebase/app';
 import {
   createUserWithEmailAndPassword,
   updatePassword as fbUpdatePassword,
   deleteUser as fbDeleteUser,
   getAuth,
-  signInWithEmailAndPassword
+  signInWithEmailAndPassword,
+  signOut
 } from 'firebase/auth';
-import { db, auth } from '@/lib/firebase';
+import { db, auth, firebaseConfig } from '@/lib/firebase';
 
 const USERS = 'users';
 
@@ -102,10 +104,22 @@ export async function createUser(data: {
     throw new Error(`The email "${cleanEmail}" is already in the system. Please choose a different email before continuing.`);
   }
 
+  // Initialize an ephemeral secondary Firebase app so creating a new user
+  // does NOT log out the currently logged-in administrator.
+  const secondaryAppName = `SecondaryAuth_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+  const secondaryAuth = getAuth(secondaryApp);
+
   try {
-    // Create in Firebase Auth first
-    const credential = await createUserWithEmailAndPassword(auth, cleanEmail, data.password);
+    // Create in Firebase Auth via secondary app instance
+    const credential = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, data.password);
     const uid = credential.user.uid;
+
+    // Immediately sign out secondary auth session and clean up app
+    try {
+      await signOut(secondaryAuth);
+      await deleteApp(secondaryApp);
+    } catch (_) {}
 
     const profile: Omit<UserProfile, 'id'> = {
       email: cleanEmail,
@@ -126,9 +140,14 @@ export async function createUser(data: {
       createdAt: new Date().toISOString(),
     };
 
+    // Save profile using the main db instance (admin is still authenticated)
     await setDoc(doc(db, USERS, uid), profile);
     return { id: uid, ...profile };
   } catch (error: any) {
+    try {
+      await deleteApp(secondaryApp);
+    } catch (_) {}
+
     if (error.code === 'auth/email-already-in-use') {
       throw new Error(`The email "${cleanEmail}" is already in the system. Please choose a different email before continuing.`);
     }

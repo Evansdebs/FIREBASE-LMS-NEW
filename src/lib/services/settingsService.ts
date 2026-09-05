@@ -15,6 +15,8 @@ export interface SystemSettings {
   term?: string;
   primaryColor?: string;
   secondaryColor?: string;
+  textColorLight?: string;
+  textColorDark?: string;
   lockdownMode?: boolean;
   allowRegistration?: boolean;
   defaultTheme?: string;

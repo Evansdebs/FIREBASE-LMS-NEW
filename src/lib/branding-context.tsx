@@ -8,6 +8,8 @@ interface Settings {
   logo?: string | null;
   primaryColor?: string;
   secondaryColor?: string;
+  textColorLight?: string;
+  textColorDark?: string;
   lockdownMode?: boolean;
   welcomeMessage?: string;
   schoolCode?: string;
@@ -26,6 +28,8 @@ const DEFAULT_SETTINGS: Settings = {
   schoolName: 'ONEREAL Academy',
   primaryColor: '#6366f1',
   secondaryColor: '#4f46e5',
+  textColorLight: '#0f172a',
+  textColorDark: '#f8fafc',
   lockdownMode: false,
   welcomeMessage: 'Welcome to ONEREAL LMS',
 };
@@ -40,6 +44,12 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
     }
     if (s.secondaryColor) {
       document.documentElement.style.setProperty('--accent', s.secondaryColor);
+    }
+    if (s.textColorLight && !document.documentElement.classList.contains('dark')) {
+      document.documentElement.style.setProperty('--foreground', s.textColorLight);
+    }
+    if (s.textColorDark && document.documentElement.classList.contains('dark')) {
+      document.documentElement.style.setProperty('--foreground', s.textColorDark);
     }
     
     // Sync document title

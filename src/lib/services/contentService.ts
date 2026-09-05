@@ -12,23 +12,24 @@ import { db } from '@/lib/firebase';
 export interface MaterialDoc {
   id: string;
   topicId?: string;
-  type: 'PDF' | 'VIDEO' | 'LINK' | 'IMAGE' | 'DOCUMENT';
+  title?: string;
+  type: 'PDF' | 'VIDEO' | 'LINK' | 'IMAGE' | 'DOCUMENT' | 'WORD' | 'EXCEL' | 'AUDIO' | 'TEXT';
   fileName: string;
   filePath?: string;
+  fileUrl?: string;
+  fileSize?: number;
   description?: string;
   textContent?: string;
   externalUrl?: string;
   isGlobal: boolean;
-  uploadedBy: string;
+  uploadedBy?: string;
   uploaderName?: string;
   createdAt?: string;
 }
 
 export async function getMaterials(topicId?: string): Promise<MaterialDoc[]> {
   const col = collection(db, 'materials');
-  const q = topicId
-    ? query(col, where('topicId', '==', topicId))
-    : query(col, where('isGlobal', '==', true));
+  const q = topicId ? query(col, where('topicId', '==', topicId)) : col;
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as MaterialDoc));
 }
@@ -150,32 +151,62 @@ export async function createForumCategory(data: Omit<ForumCategory, 'id'>): Prom
 }
 
 export async function getForumThreads(categoryId?: string): Promise<ForumThread[]> {
-  const col = collection(db, 'forum_threads');
-  const q = categoryId ? query(col, where('categoryId', '==', categoryId)) : col;
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as ForumThread));
+  try {
+    const col = collection(db, 'forum_threads');
+    const q = categoryId ? query(col, where('categoryId', '==', categoryId)) : col;
+    const snap = await getDocs(q);
+    const threads = snap.docs.map(d => ({ id: d.id, ...d.data() } as ForumThread));
+    return threads.sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
+  } catch (error) {
+    console.error('Error fetching forum threads:', error);
+    return [];
+  }
 }
 
 export async function createForumThread(data: Omit<ForumThread, 'id'>): Promise<ForumThread> {
-  const ref = await addDoc(collection(db, 'forum_threads'), { ...data, postCount: 0, createdAt: new Date().toISOString() });
-  return { id: ref.id, ...data };
+  const threadData = { ...data, postCount: 0, createdAt: new Date().toISOString() };
+  const ref = await addDoc(collection(db, 'forum_threads'), threadData);
+  try {
+    if (data.categoryId) {
+      const catRef = doc(db, 'forum_categories', data.categoryId);
+      const catSnap = await getDoc(catRef);
+      if (catSnap.exists()) {
+        await updateDoc(catRef, { threadCount: (catSnap.data().threadCount || 0) + 1 });
+      }
+    }
+  } catch (_) {}
+  return { id: ref.id, ...threadData };
 }
 
 export async function getForumPosts(threadId: string): Promise<ForumPost[]> {
-  const q = query(collection(db, 'forum_posts'), where('threadId', '==', threadId), orderBy('createdAt', 'asc'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as ForumPost));
+  try {
+    // Querying without compound orderBy avoids Firestore composite index requirements
+    const q = query(collection(db, 'forum_posts'), where('threadId', '==', threadId));
+    const snap = await getDocs(q);
+    const posts = snap.docs.map(d => ({ id: d.id, ...d.data() } as ForumPost));
+    return posts.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  } catch (error) {
+    console.error('Error fetching forum posts:', error);
+    return [];
+  }
 }
 
 export async function createForumPost(data: Omit<ForumPost, 'id'>): Promise<ForumPost> {
-  const ref = await addDoc(collection(db, 'forum_posts'), { ...data, createdAt: new Date().toISOString() });
-  // increment post count
-  const threadRef = doc(db, 'forum_threads', data.threadId);
-  const threadSnap = await getDoc(threadRef);
-  if (threadSnap.exists()) {
-    await updateDoc(threadRef, { postCount: (threadSnap.data().postCount || 0) + 1 });
-  }
-  return { id: ref.id, ...data };
+  const postData = { ...data, createdAt: new Date().toISOString() };
+  const ref = await addDoc(collection(db, 'forum_posts'), postData);
+  // increment post count on thread
+  try {
+    const threadRef = doc(db, 'forum_threads', data.threadId);
+    const threadSnap = await getDoc(threadRef);
+    if (threadSnap.exists()) {
+      await updateDoc(threadRef, { postCount: (threadSnap.data().postCount || 0) + 1 });
+    }
+  } catch (_) {}
+  return { id: ref.id, ...postData };
 }
 /* ─── SHOP ─────────────────────────────────────────────── */
 export interface ShopItem {
@@ -246,6 +277,7 @@ export interface Simulation {
   title: string;
   description?: string;
   category: string;
+  level?: string;
   iframeUrl: string;
   thumbnail?: string;
   isGlobal: boolean;

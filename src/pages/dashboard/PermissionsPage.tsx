@@ -47,6 +47,7 @@ const PERMISSION_GROUPS = [
     title: 'Data & Communications',
     permissions: [
       { id: 'send_announcements', label: 'Send Announcements', description: 'Post system-wide announcements' },
+      { id: 'create_forum', label: 'Create Forum Categories & Topics', description: 'Allow creating new forum categories and starting discussion topics' },
       { id: 'view_analytics', label: 'View Analytics', description: 'Access global Analytics dashboard' },
       { id: 'view_all_grades', label: 'View All Grades', description: 'Access the Global Gradebook' },
     ]

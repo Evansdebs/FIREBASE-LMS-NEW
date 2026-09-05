@@ -294,7 +294,7 @@ export default function UserManagement() {
               />
             </div>
             <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Role" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Role" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Roles</SelectItem>
                 <SelectItem value="super_admin">Admin</SelectItem>
@@ -303,7 +303,7 @@ export default function UserManagement() {
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
@@ -311,7 +311,7 @@ export default function UserManagement() {
               </SelectContent>
             </Select>
             <Select value={classFilter} onValueChange={setClassFilter}>
-              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Filter by Class" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Filter by Class" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Classes</SelectItem>
                 {classes.map((c: any) => <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>)}
@@ -654,7 +654,11 @@ function EditUserForm({ user, onClose, onRefresh }: { user: any; onClose: () => 
     e.preventDefault();
     try {
       setLoading(true);
-      const payload = { ...form, classId: form.classId === 'unassigned' ? '' : form.classId };
+      const payload = { 
+        ...form, 
+        role: (user.role || form.role).toUpperCase() as any,
+        classId: form.classId === 'unassigned' ? '' : form.classId 
+      };
       await updateUser(user.id, { ...payload });
       toast.success('User updated successfully');
       onRefresh();
