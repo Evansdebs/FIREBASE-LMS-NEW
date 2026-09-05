@@ -147,12 +147,19 @@ export default function TimetablePage() {
   }, [currentTime]);
 
   const isCurrentSlot = (entry: any) => {
-    if (entry.dayOfWeek !== currentDayOfWeekStr) return false;
-    const [startH, startM] = entry.startTime.split(':').map(Number);
-    const [endH, endM] = entry.endTime.split(':').map(Number);
-    const startMinutes = startH * 60 + startM;
-    const endMinutes = endH * 60 + endM;
-    return currentTimeInMinutes >= startMinutes && currentTimeInMinutes <= endMinutes;
+    if (!entry || !entry.startTime || !entry.endTime) return false;
+    const entryDay = (entry.dayOfWeek || '').toUpperCase();
+    if (entryDay !== currentDayOfWeekStr) return false;
+    try {
+      const [startH, startM] = entry.startTime.split(':').map(Number);
+      const [endH, endM] = entry.endTime.split(':').map(Number);
+      if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return false;
+      const startMinutes = startH * 60 + startM;
+      const endMinutes = endH * 60 + endM;
+      return currentTimeInMinutes >= startMinutes && currentTimeInMinutes <= endMinutes;
+    } catch {
+      return false;
+    }
   };
 
   // --- FETCH CONFIG & DATA ---
@@ -168,16 +175,16 @@ export default function TimetablePage() {
     try {
       setLoading(true);
       const [classes, subjects, courses, teachers] = await Promise.all([
-        getClasses(),
+        getClasses().catch(() => []),
         getSubjects().catch(() => []),
         getCourses().catch(() => []),
         getUsersByRole('teacher').catch(() => [])
       ]);
 
-      const classesWithSubjects = classes.map(c => {
-        const classSubs = subjects.filter(s => s.classId === c.id);
+      const classesWithSubjects = (classes || []).map(c => {
+        const classSubs = (subjects || []).filter(s => s.classId === c.id);
         const subjectList = classSubs.length > 0 ? classSubs : (
-          courses.length > 0 
+          (courses || []).length > 0 
             ? courses.map(co => ({ id: co.id, name: co.title || (co as any).name || 'Course', classId: c.id }))
             : subjects
         );
@@ -187,12 +194,13 @@ export default function TimetablePage() {
         };
       });
 
-      setConfigData({ classes: classesWithSubjects, teachers });
+      setConfigData({ classes: classesWithSubjects, teachers: teachers || [] });
       
       if (classesWithSubjects.length > 0) {
         setSelectedClassId(classesWithSubjects[0].id.toString());
       }
     } catch (err: any) {
+      console.error('fetchConfig error:', err);
       toast.error(err.message || 'Failed to load configuration lists.');
     } finally {
       setLoading(false);
@@ -202,20 +210,28 @@ export default function TimetablePage() {
   const fetchStudentTimetable = async () => {
     try {
       setLoading(true);
-      let targetClassId = user?.classId;
+      let targetClassId = user?.classId || (user as any)?.student?.classId;
       if (!targetClassId && user?.className) {
         const allClasses = await getClasses();
-        const found = allClasses.find(c => c.name.toLowerCase() === user.className?.toLowerCase());
+        const found = allClasses.find(c => (c.name || '').toLowerCase() === (user.className || '').toLowerCase());
         if (found) targetClassId = found.id;
       }
       if (targetClassId) {
         const res = await getTimetable(String(targetClassId));
-        setTimetable(res);
+        setTimetable(res || []);
       } else {
-        setTimetable([]);
+        const allClasses = await getClasses().catch(() => []);
+        if (allClasses.length > 0) {
+          const res = await getTimetable(String(allClasses[0].id));
+          setTimetable(res || []);
+        } else {
+          setTimetable([]);
+        }
       }
     } catch (err: any) {
+      console.error('fetchStudentTimetable error:', err);
       toast.error(err.message || 'Failed to load student timetable.');
+      setTimetable([]);
     } finally {
       setLoading(false);
     }
@@ -226,9 +242,11 @@ export default function TimetablePage() {
     try {
       setLoading(true);
       const res = await getTimetable(classId);
-      setTimetable(res);
+      setTimetable(res || []);
     } catch (err: any) {
+      console.error('fetchClassTimetable error:', err);
       toast.error(err.message || 'Failed to load timetable entries.');
+      setTimetable([]);
     } finally {
       setLoading(false);
     }
@@ -244,7 +262,7 @@ export default function TimetablePage() {
   // Subjects for the currently selected class
   const classSubjects = useMemo(() => {
     if (!isTeacherOrAdmin || !selectedClassId) return [];
-    const cls = configData.classes.find(c => c.id.toString() === selectedClassId);
+    const cls = configData.classes.find(c => c.id && c.id.toString() === selectedClassId);
     return cls?.subjects || [];
   }, [selectedClassId, configData.classes, isTeacherOrAdmin]);
 
@@ -259,14 +277,16 @@ export default function TimetablePage() {
       SATURDAY: [],
       SUNDAY: [],
     };
-    timetable.forEach(entry => {
-      if (groups[entry.dayOfWeek]) {
-        groups[entry.dayOfWeek].push(entry);
+    (timetable || []).forEach(entry => {
+      if (!entry) return;
+      const day = (entry.dayOfWeek || '').toUpperCase();
+      if (groups[day]) {
+        groups[day].push(entry);
       }
     });
 
     Object.keys(groups).forEach(day => {
-      groups[day].sort((a, b) => a.startTime.localeCompare(b.startTime));
+      groups[day].sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
     });
 
     return groups;
@@ -385,11 +405,15 @@ export default function TimetablePage() {
                   <SelectValue placeholder="Select Class" />
                 </SelectTrigger>
                 <SelectContent>
-                  {configData.classes.map(cls => (
-                    <SelectItem key={cls.id} value={cls.id.toString()}>
-                      {cls.name}
-                    </SelectItem>
-                  ))}
+                  {configData.classes.length === 0 ? (
+                    <SelectItem value="__none__" disabled>No classes configured</SelectItem>
+                  ) : (
+                    configData.classes.map(cls => (
+                      <SelectItem key={cls.id} value={cls.id ? cls.id.toString() : ''}>
+                        {cls.name || 'Class'}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -660,8 +684,8 @@ export default function TimetablePage() {
                   <SelectContent>
                     <SelectItem value="__none__">Study Hall / No teacher</SelectItem>
                     {configData.teachers.map(t => (
-                      <SelectItem key={t.id} value={t.id.toString()}>
-                        {t.user.name}
+                      <SelectItem key={t.id} value={t.id ? t.id.toString() : ''}>
+                        {t.fullName || t.name || t.email || 'Teacher'}
                       </SelectItem>
                     ))}
                   </SelectContent>

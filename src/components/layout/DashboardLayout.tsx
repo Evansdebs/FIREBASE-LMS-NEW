@@ -166,14 +166,23 @@ export default function DashboardLayout() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 p-1.5 shadow-lg">
-                <DropdownMenuLabel className="font-normal px-2 py-1.5">
-                  <div className="flex flex-col space-y-0.5">
-                    <p className="text-xs font-bold text-foreground truncate">{user?.fullName}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{user?.email}</p>
-                    <span className="inline-block mt-1 text-[9px] font-semibold uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded w-fit">
-                      {user?.role?.replace('_', ' ')}
-                    </span>
+                <DropdownMenuLabel className="font-normal px-2 py-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-full bg-primary/10 overflow-hidden border border-border shrink-0 flex items-center justify-center">
+                      {user?.avatar ? (
+                        <img src={user.avatar} alt={user.fullName} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="font-bold text-xs text-primary">{user?.fullName?.charAt(0) || 'U'}</span>
+                      )}
+                    </div>
+                    <div className="flex flex-col space-y-0.5 min-w-0">
+                      <p className="text-xs font-bold text-foreground truncate">{user?.fullName}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{user?.email}</p>
+                    </div>
                   </div>
+                  <span className="inline-block mt-2 text-[9px] font-semibold uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded w-fit">
+                    {user?.role?.replace('_', ' ')}
+                  </span>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild className="cursor-pointer text-xs">

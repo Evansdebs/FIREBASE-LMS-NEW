@@ -55,9 +55,19 @@ export async function getUserById(uid: string): Promise<UserProfile | null> {
 }
 
 export async function getUsersByRole(role: string): Promise<UserProfile[]> {
-  const q = query(collection(db, USERS), where('role', '==', role.toUpperCase()));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile));
+  try {
+    const qUpper = query(collection(db, USERS), where('role', '==', role.toUpperCase()));
+    const snapUpper = await getDocs(qUpper);
+    if (!snapUpper.empty) {
+      return snapUpper.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile));
+    }
+    const qLower = query(collection(db, USERS), where('role', '==', role.toLowerCase()));
+    const snapLower = await getDocs(qLower);
+    return snapLower.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile));
+  } catch (err) {
+    console.error('getUsersByRole error', err);
+    return [];
+  }
 }
 
 export async function getStudentsByClass(classId: string): Promise<UserProfile[]> {

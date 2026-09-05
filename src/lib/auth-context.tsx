@@ -18,7 +18,8 @@ export interface User {
   avatar?: string;
   student?: any;
   teacher?: any;
-  className?: string; 
+  className?: string;
+  classId?: string;
   permissions?: Record<string, boolean>;
   mustChangePassword?: boolean;
 }
@@ -67,7 +68,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       avatar: data.avatar || undefined,
       student: data.student || undefined,
       teacher: data.teacher || undefined,
-      className: data.className || data.student?.class?.name || undefined,
+      classId: data.classId || data.student?.classId || data.student?.class?.id || undefined,
+      className: data.className || data.student?.class?.name || data.student?.className || undefined,
       permissions: parsedPermissions,
       mustChangePassword: Boolean(data.mustChangePassword)
     };

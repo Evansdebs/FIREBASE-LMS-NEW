@@ -77,16 +77,25 @@ function AdminDashboard({ user, globalSettings, currentTime }: { user: any, glob
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
-            {getGreeting()}, {user.fullName.split(' ')[0]}
-          </h1>
-          {globalSettings?.welcomeMessage && (
-            <p className="text-primary font-medium animate-pulse mt-1">
-              {globalSettings.welcomeMessage}
-            </p>
-          )}
-          <p className="text-muted-foreground mt-1">System overview and quick actions</p>
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-primary/30 shadow-sm shrink-0 bg-primary/10 flex items-center justify-center">
+            {user?.avatar ? (
+              <img src={user.avatar} alt={user.fullName} className="w-full h-full object-cover" />
+            ) : (
+              <span className="font-bold text-lg text-primary">{user?.fullName?.charAt(0) || 'U'}</span>
+            )}
+          </div>
+          <div>
+            <h1 className="font-heading text-2xl font-bold text-foreground">
+              {getGreeting()}, {user.fullName.split(' ')[0]}
+            </h1>
+            {globalSettings?.welcomeMessage && (
+              <p className="text-primary font-medium animate-pulse mt-1">
+                {globalSettings.welcomeMessage}
+              </p>
+            )}
+            <p className="text-muted-foreground mt-1">System overview and quick actions</p>
+          </div>
         </div>
         <div className="bg-muted px-4 py-2 rounded-xl border border-border shadow-sm flex items-center gap-3 animate-in slide-in-from-right-4 duration-500">
            <div className="p-2 bg-primary/10 rounded-lg text-primary">
@@ -380,16 +389,25 @@ function TeacherDashboard({ user, globalSettings, currentTime }: { user: any, gl
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
-            {getGreeting()}, {user.fullName.split(' ')[0]}
-          </h1>
-          {globalSettings?.welcomeMessage && (
-            <p className="text-primary font-medium animate-pulse mt-1">
-              {globalSettings.welcomeMessage}
-            </p>
-          )}
-          <p className="text-muted-foreground mt-1">Manage your subjects and students</p>
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-primary/30 shadow-sm shrink-0 bg-primary/10 flex items-center justify-center">
+            {user?.avatar ? (
+              <img src={user.avatar} alt={user.fullName} className="w-full h-full object-cover" />
+            ) : (
+              <span className="font-bold text-lg text-primary">{user?.fullName?.charAt(0) || 'U'}</span>
+            )}
+          </div>
+          <div>
+            <h1 className="font-heading text-2xl font-bold text-foreground">
+              {getGreeting()}, {user.fullName.split(' ')[0]}
+            </h1>
+            {globalSettings?.welcomeMessage && (
+              <p className="text-primary font-medium animate-pulse mt-1">
+                {globalSettings.welcomeMessage}
+              </p>
+            )}
+            <p className="text-muted-foreground mt-1">Manage your subjects and students</p>
+          </div>
         </div>
         <div className="bg-muted px-4 py-2 rounded-xl border border-border shadow-sm flex items-center gap-3 animate-in slide-in-from-right-4 duration-500">
            <div className="p-2 bg-primary/10 rounded-lg text-primary">
@@ -638,16 +656,25 @@ function StudentDashboard({ user, globalSettings, currentTime }: { user: any, gl
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
-            {getGreeting()}, {user.fullName.split(' ')[0]}
-          </h1>
-          {globalSettings?.welcomeMessage && (
-            <p className="text-primary font-medium animate-pulse mt-1">
-              {globalSettings.welcomeMessage}
-            </p>
-          )}
-          <p className="text-muted-foreground mt-1">Track your learning progress</p>
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-primary/30 shadow-sm shrink-0 bg-primary/10 flex items-center justify-center">
+            {user?.avatar ? (
+              <img src={user.avatar} alt={user.fullName} className="w-full h-full object-cover" />
+            ) : (
+              <span className="font-bold text-lg text-primary">{user?.fullName?.charAt(0) || 'U'}</span>
+            )}
+          </div>
+          <div>
+            <h1 className="font-heading text-2xl font-bold text-foreground">
+              {getGreeting()}, {user.fullName.split(' ')[0]}
+            </h1>
+            {globalSettings?.welcomeMessage && (
+              <p className="text-primary font-medium animate-pulse mt-1">
+                {globalSettings.welcomeMessage}
+              </p>
+            )}
+            <p className="text-muted-foreground mt-1">Track your learning progress</p>
+          </div>
         </div>
         <div className="bg-muted px-4 py-2 rounded-xl border border-border shadow-sm flex items-center gap-3 animate-in slide-in-from-right-4 duration-500">
            <div className="p-2 bg-primary/10 rounded-lg text-primary">

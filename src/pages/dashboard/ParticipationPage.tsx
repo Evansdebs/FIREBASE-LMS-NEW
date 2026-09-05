@@ -210,8 +210,12 @@ export default function ParticipationPage() {
                     )}>
                       {entry.rank <= 3 ? ['🥇', '🥈', '🥉'][entry.rank - 1] : entry.rank}
                     </span>
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs">
-                      {entry.avatar}
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs overflow-hidden shrink-0 border border-border">
+                      {entry.avatar ? (
+                        <img src={entry.avatar} alt={entry.name} className="w-full h-full object-cover" />
+                      ) : (
+                        entry.name.charAt(0)
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={cn('text-sm font-medium truncate', entry.isCurrentUser ? 'text-primary' : 'text-card-foreground')}>

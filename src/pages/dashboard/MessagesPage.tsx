@@ -83,6 +83,7 @@ export default function MessagesPage() {
               name: targetUser.name || targetUser.fullName || targetUser.email,
               email: targetUser.email,
               role: targetUser.role,
+              avatar: targetUser.avatar || '',
               className: targetUser.className,
             });
           }
@@ -310,12 +311,17 @@ export default function MessagesPage() {
                           name: u.name || u.fullName || u.email,
                           email: u.email,
                           role: u.role,
+                          avatar: u.avatar || '',
                           className: u.className || '',
                         })}
                         className="w-full flex items-center gap-2 p-2 hover:bg-primary/10 rounded-lg transition-colors text-left"
                       >
-                         <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs shrink-0">
-                           {(u.name || u.fullName || u.email || '?').charAt(0).toUpperCase()}
+                         <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs shrink-0 overflow-hidden border border-border">
+                           {u.avatar ? (
+                             <img src={u.avatar} alt={u.name || u.fullName} className="w-full h-full object-cover" />
+                           ) : (
+                             (u.name || u.fullName || u.email || '?').charAt(0).toUpperCase()
+                           )}
                          </div>
                          <div className="flex-1 min-w-0">
                            <div className="flex items-center justify-between gap-1">
@@ -352,8 +358,12 @@ export default function MessagesPage() {
                     )}
                   >
                     <div className="relative shrink-0">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-                        {(conv.partner?.name || '?').charAt(0).toUpperCase()}
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm overflow-hidden border border-border">
+                        {conv.partner?.avatar ? (
+                          <img src={conv.partner.avatar} alt={conv.partner.name} className="w-full h-full object-cover" />
+                        ) : (
+                          (conv.partner?.name || '?').charAt(0).toUpperCase()
+                        )}
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
@@ -402,8 +412,12 @@ export default function MessagesPage() {
                         <ChevronLeft className="w-5 h-5" />
                       </Button>
                     )}
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm shrink-0">
-                      {(currentConv.partner?.name || '?').charAt(0).toUpperCase()}
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm shrink-0 overflow-hidden border border-border">
+                      {currentConv.partner?.avatar ? (
+                        <img src={currentConv.partner.avatar} alt={currentConv.partner.name} className="w-full h-full object-cover" />
+                      ) : (
+                        (currentConv.partner?.name || '?').charAt(0).toUpperCase()
+                      )}
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">

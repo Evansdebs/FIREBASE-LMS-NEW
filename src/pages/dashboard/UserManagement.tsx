@@ -343,8 +343,12 @@ export default function UserManagement() {
                 <tr key={u.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs">
-                        {u.name.charAt(0)}
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs overflow-hidden shrink-0 border border-border">
+                        {u.avatar ? (
+                          <img src={u.avatar} alt={u.name} className="w-full h-full object-cover" />
+                        ) : (
+                          u.name.charAt(0)
+                        )}
                       </div>
                       <div>
                         <p className="text-sm font-medium text-foreground">{u.name}</p>
@@ -759,8 +763,12 @@ function ViewUserProfileModal({ userId, onClose }: { userId: number; onClose: ()
   return (
     <div className="space-y-6 py-2">
       <div className="flex items-center gap-4 p-4 rounded-xl border border-border bg-muted/20">
-        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary font-heading font-bold text-2xl">
-          {details.name.charAt(0)}
+        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary font-heading font-bold text-2xl overflow-hidden shrink-0 border border-border">
+          {details.avatar ? (
+            <img src={details.avatar} alt={details.name} className="w-full h-full object-cover" />
+          ) : (
+            details.name.charAt(0)
+          )}
         </div>
         <div className="flex-1">
           <h2 className="text-xl font-bold font-heading">{details.name}</h2>
