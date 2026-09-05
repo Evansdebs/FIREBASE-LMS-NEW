@@ -169,8 +169,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }, []);
 
+  const updateCurrentUserProfile = useCallback(async (data: Partial<User>) => {
+    if (!state.user?.id) return;
+    const uid = String(state.user.id);
+    const userDocRef = doc(db, 'users', uid);
+    
+    const updatePayload: Record<string, unknown> = {};
+    if ('avatar' in data) updatePayload.avatar = data.avatar || null;
+    if (data.fullName !== undefined) {
+      updatePayload.fullName = data.fullName;
+      updatePayload.name = data.fullName;
+    }
+    if (data.className !== undefined) updatePayload.className = data.className;
+    updatePayload.updatedAt = new Date().toISOString();
+
+    const clean = Object.fromEntries(
+      Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
+    );
+    await updateDoc(userDocRef, clean);
+
+    setState(prev => prev.user ? {
+      ...prev,
+      user: {
+        ...prev.user,
+        ...data,
+      }
+    } : prev);
+  }, [state.user?.id]);
+
   return (
-    <AuthContext.Provider value={{ ...state, login, logout }}>
+    <AuthContext.Provider value={{ ...state, login, logout, updateCurrentUserProfile }}>
       {children}
     </AuthContext.Provider>
   );

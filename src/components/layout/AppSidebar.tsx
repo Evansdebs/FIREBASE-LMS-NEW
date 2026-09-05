@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, BookOpen, Settings, LogOut, GraduationCap,
   Shield, ClipboardList, MessageSquare, BarChart3, Calendar, FileText,
   HelpCircle, FolderOpen, Megaphone, Trophy, ChevronDown, ChevronRight,
-  StickyNote, ShoppingBag, FlaskConical, Sparkles, Video, Grid
+  StickyNote, ShoppingBag, FlaskConical, Sparkles, Video, Grid, User
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -28,6 +28,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Main',
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['super_admin', 'teacher', 'student'] },
+      { icon: User, label: 'My Profile', path: '/dashboard/profile', roles: ['super_admin', 'teacher', 'student'] },
       { icon: Megaphone, label: 'Announcements', path: '/dashboard/announcements', roles: ['super_admin', 'student'], permission: 'send_announcements' },
     ]
   },
@@ -228,13 +229,21 @@ export default function AppSidebar({
 
         {/* User profile integrated at the end of nav */}
         <div className={cn("mt-6 pt-4 border-t border-sidebar-border/10", collapsed && "mt-4")}>
-          <div className={cn("flex items-center gap-3 py-2 px-1 rounded-lg hover:bg-sidebar-accent transition-colors cursor-default group", collapsed && "justify-center")}>
-            <div className="w-9 h-9 rounded-full bg-sidebar-primary/20 flex items-center justify-center text-sidebar-primary font-semibold text-sm shrink-0">
-              {user.fullName.charAt(0)}
+          <div 
+            onClick={() => navigate('/dashboard/profile')}
+            className={cn("flex items-center gap-3 py-2 px-1 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer group", collapsed && "justify-center")}
+            title="View & manage my profile"
+          >
+            <div className="w-9 h-9 rounded-full bg-sidebar-primary/20 flex items-center justify-center text-sidebar-primary font-semibold text-sm shrink-0 overflow-hidden border border-sidebar-border/30">
+              {user.avatar ? (
+                <img src={user.avatar} alt={user.fullName} className="w-full h-full object-cover" />
+              ) : (
+                user.fullName.charAt(0)
+              )}
             </div>
             {!collapsed && (
               <div className="flex-1 min-w-0 animate-in fade-in slide-in-from-left-1 duration-300">
-                <p className="text-sm font-medium text-sidebar-accent-foreground truncate">{user.fullName}</p>
+                <p className="text-sm font-medium text-sidebar-accent-foreground truncate group-hover:text-sidebar-primary transition-colors">{user.fullName}</p>
                 <p className="text-[10px] text-sidebar-foreground/60 uppercase tracking-wider font-bold">{roleLabel}</p>
               </div>
             )}

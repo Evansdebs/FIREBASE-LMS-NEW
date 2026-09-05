@@ -198,6 +198,13 @@ export async function toggleUserActive(uid: string, isActive: boolean): Promise<
   await updateDoc(doc(db, USERS, uid), { isActive, updatedAt: new Date().toISOString() });
 }
 
+export async function updateUserAvatar(uid: string, avatar: string | null): Promise<void> {
+  await updateDoc(doc(db, USERS, uid), {
+    avatar: avatar || null,
+    updatedAt: new Date().toISOString()
+  });
+}
+
 /* ─── Delete ────────────────────────────────────────────────── */
 export async function deleteUserProfile(uid: string): Promise<void> {
   await deleteDoc(doc(db, USERS, uid));

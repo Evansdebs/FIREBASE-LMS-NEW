@@ -1,15 +1,24 @@
 import { useAuth } from '@/lib/auth-context';
 import { useBranding } from '@/lib/branding-context';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, Link, useNavigate } from 'react-router-dom';
 import AppSidebar from './AppSidebar';
 import NotificationBell from './NotificationBell';
 import { ModeToggle } from './ModeToggle';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Menu, ChevronLeft, GraduationCap } from 'lucide-react';
+import { Menu, ChevronLeft, GraduationCap, User, LogOut, Settings as SettingsIcon } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export default function DashboardLayout() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
+  const navigate = useNavigate();
   const { settings } = useBranding();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebar_collapsed');
@@ -143,9 +152,54 @@ export default function DashboardLayout() {
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
               {settings?.logo ? <img src={settings.logo} className="w-full h-full object-contain" /> : <GraduationCap className="w-5 h-5 text-primary" />}
             </div>
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs sm:text-sm ml-1">
-              {user?.fullName?.charAt(0) || 'U'}
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button 
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 hover:ring-2 hover:ring-primary/40 transition-all flex items-center justify-center text-primary font-semibold text-xs sm:text-sm ml-1 overflow-hidden shrink-0 cursor-pointer border border-border"
+                  title="Account Menu"
+                >
+                  {user?.avatar ? (
+                    <img src={user.avatar} alt={user.fullName} className="w-full h-full object-cover" />
+                  ) : (
+                    user?.fullName?.charAt(0) || 'U'
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 p-1.5 shadow-lg">
+                <DropdownMenuLabel className="font-normal px-2 py-1.5">
+                  <div className="flex flex-col space-y-0.5">
+                    <p className="text-xs font-bold text-foreground truncate">{user?.fullName}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{user?.email}</p>
+                    <span className="inline-block mt-1 text-[9px] font-semibold uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded w-fit">
+                      {user?.role?.replace('_', ' ')}
+                    </span>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="cursor-pointer text-xs">
+                  <Link to="/dashboard/profile" className="flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-primary" />
+                    <span>My Profile</span>
+                  </Link>
+                </DropdownMenuItem>
+                {user?.role === 'super_admin' && (
+                  <DropdownMenuItem asChild className="cursor-pointer text-xs">
+                    <Link to="/dashboard/settings" className="flex items-center gap-2">
+                      <SettingsIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span>System Settings</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={() => { logout(); navigate('/'); }}
+                  className="cursor-pointer text-xs text-destructive focus:text-destructive focus:bg-destructive/10 flex items-center gap-2"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 w-full">

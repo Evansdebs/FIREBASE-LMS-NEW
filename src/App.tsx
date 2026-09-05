@@ -37,6 +37,7 @@ import MySubjectPage from "./pages/dashboard/MySubjectPage";
 import SubjectOverviewPage from "./pages/dashboard/SubjectOverviewPage";
 import TimetablePage from "./pages/dashboard/TimetablePage";
 import WhiteboardPage from "./pages/dashboard/WhiteboardPage";
+import ProfilePage from "./pages/dashboard/ProfilePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -80,6 +81,7 @@ const App = () => (
               <Route path="ai-tutor" element={<AITutorPage />} />
               <Route path="audit" element={<AuditLogsPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="profile" element={<ProfilePage />} />
               <Route path="developer" element={<DeveloperInfo />} />
             </Route>
             <Route path="/auth/change-password" element={<ChangePassword />} />
