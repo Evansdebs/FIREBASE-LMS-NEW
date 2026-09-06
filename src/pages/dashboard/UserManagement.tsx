@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { getAllUsers, createUser, updateUser, deleteUserProfile, toggleUserActive } from '@/lib/services/userService';
 import { getClasses } from '@/lib/services/academicService';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
@@ -15,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
 import {
-  Search, Plus, MoreVertical, UserCheck, UserX, Edit, Trash2, Loader2, Eye, EyeOff, RefreshCw, User as UserIcon, Download, AlertCircle
+  Search, Plus, MoreVertical, UserCheck, UserX, Edit, Trash2, Loader2, Eye, EyeOff, RefreshCw, User as UserIcon, Download, AlertCircle, Mail, ShieldAlert
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
@@ -35,114 +37,89 @@ import {
 import { BulkUploadModal } from '@/components/admin/BulkUploadModal';
 
 function ResetPasswordForm({ user, onClose }: { user: any; onClose: () => void }) {
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
-  const getPasswordStrength = (pass: string) => {
-    if (!pass) return { score: 0, label: '', color: 'bg-muted' };
-    let score = 0;
-    if (pass.length >= 6) score++;
-    if (pass.length >= 10) score++;
-    if (/[A-Z]/.test(pass)) score++;
-    if (/[0-9]/.test(pass)) score++;
-    if (/[^A-Za-z0-9]/.test(pass)) score++;
-    if (score <= 2) return { score, label: 'Weak', color: 'bg-destructive' };
-    if (score <= 3) return { score, label: 'Medium', color: 'bg-orange-500' };
-    if (score <= 4) return { score, label: 'Strong', color: 'bg-green-500' };
-    return { score, label: 'Very Strong', color: 'bg-emerald-500' };
-  };
-
-  const strength = getPasswordStrength(password);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRequirePasswordChange = async () => {
     try {
       setLoading(true);
-      // Password reset is handled by Firebase — flag the user to change password on next login
       await updateUser(user.id, { mustChangePassword: true });
-      toast.success('User flagged to change password on next login.');
-      onClose();
-      toast.success('Password reset successfully. User will be forced to change it.');
+      toast.success(`${user.name || 'User'} will be required to change password on next login.`);
       onClose();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Failed to flag user');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSendResetEmail = async () => {
+    if (!user.email) {
+      toast.error('User does not have an email address');
+      return;
+    }
+    try {
+      setSendingEmail(true);
+      await sendPasswordResetEmail(auth, user.email);
+      toast.success(`Password reset link sent to ${user.email}`);
+      onClose();
+    } catch (err: any) {
+      console.error('Send reset email error:', err);
+      toast.error(err.message || 'Failed to send password reset email');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 py-4">
-      <div className="p-3 bg-warning/10 border border-warning/20 rounded-lg text-xs leading-relaxed text-warning-foreground">
-        Resetting <strong>{user.name}</strong>'s password. They will be required to change it on their next login.
+    <div className="space-y-5 py-4">
+      <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg text-xs leading-relaxed text-foreground">
+        Manage password reset for <strong>{user.name}</strong> ({user.email}). You can send a direct reset email or enforce a password change when they next log in.
       </div>
 
-      <div className="space-y-2">
-        <div className="flex justify-between items-center">
-          <Label>New Password</Label>
+      <div className="space-y-4">
+        <div className="border rounded-xl p-4 space-y-2 bg-card hover:bg-muted/30 transition-colors">
+          <div className="flex items-center gap-2 font-medium text-sm">
+            <Mail className="w-4 h-4 text-primary" /> Send Reset Link via Email
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Sends an official password reset email to <strong>{user.email}</strong> with a secure link to choose a new password.
+          </p>
           <Button 
             type="button" 
-            variant="ghost" 
-            size="sm" 
-            className="h-6 text-[10px] gap-1 text-primary hover:text-primary hover:bg-primary/5"
-            onClick={() => {
-              const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
-              const pass = Array.from({length: 12}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-              setPassword(pass);
-              setShowPassword(true);
-            }}
+            variant="outline" 
+            className="w-full gap-2 mt-2" 
+            onClick={handleSendResetEmail} 
+            disabled={sendingEmail || loading}
           >
-            <RefreshCw className="w-3 h-3" /> Generate
+            {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            Send Password Reset Email
           </Button>
         </div>
-        <div className="relative">
-          <Input 
-            type={showPassword ? 'text' : 'password'} 
-            value={password} 
-            onChange={e => setPassword(e.target.value)} 
-            required 
-            className="pr-10"
-            placeholder="Min 8 characters recommended..."
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        </div>
-        
-        {password && (
-          <div className="space-y-1.5 mt-1.5">
-            <div className="flex justify-between items-center text-[10px] font-medium uppercase tracking-wider">
-              <span className="text-muted-foreground">Strength:</span>
-              <span className={cn(
-                strength.label === 'Weak' ? 'text-destructive' :
-                strength.label === 'Medium' ? 'text-orange-500' :
-                strength.label === 'Strong' ? 'text-green-500' : 'text-emerald-500'
-              )}>
-                {strength.label}
-              </span>
-            </div>
-            <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
-              <div 
-                className={cn("h-full transition-all duration-300", strength.color)} 
-                style={{ width: `${(strength.score / 5) * 100}%` }}
-              />
-            </div>
+
+        <div className="border rounded-xl p-4 space-y-2 bg-card hover:bg-muted/30 transition-colors">
+          <div className="flex items-center gap-2 font-medium text-sm">
+            <ShieldAlert className="w-4 h-4 text-warning" /> Enforce Change on Next Login
           </div>
-        )}
+          <p className="text-xs text-muted-foreground">
+            The user can log in with their current/temporary credentials and will be immediately redirected to set a new password.
+          </p>
+          <Button 
+            type="button" 
+            className="w-full gap-2 mt-2" 
+            onClick={handleRequirePasswordChange} 
+            disabled={loading || sendingEmail}
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
+            Enforce Password Change on Login
+          </Button>
+        </div>
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
-        <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-        <Button type="submit" disabled={loading || !password}>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Assign New Password'}
-        </Button>
+      <div className="flex justify-end pt-2 border-t">
+        <Button type="button" variant="ghost" onClick={onClose}>Close</Button>
       </div>
-    </form>
+    </div>
   );
 }
 

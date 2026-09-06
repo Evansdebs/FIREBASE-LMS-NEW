@@ -5,14 +5,25 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { GraduationCap, Eye, EyeOff, ShieldCheck, AlertCircle, ShieldAlert } from 'lucide-react';
+import { GraduationCap, Eye, EyeOff, ShieldAlert, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { 
+  signInWithEmailAndPassword, 
+  updatePassword, 
+  EmailAuthProvider, 
+  reauthenticateWithCredential 
+} from 'firebase/auth';
+import { doc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 
 export default function ChangePassword() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { email } = location.state || {};
+  const { user: authUser, logout } = useAuth();
+  
+  const stateEmail = location.state?.email;
+  const email = stateEmail || authUser?.email || auth.currentUser?.email || '';
   
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -21,7 +32,7 @@ export default function ChangePassword() {
   const [showNewPass, setShowNewPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  if (!email) {
+  if (!email && !auth.currentUser) {
     navigate('/');
     return null;
   }
@@ -44,33 +55,108 @@ export default function ChangePassword() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!password) {
+      toast.error('Please enter your current/temporary password');
+      return;
+    }
+
+    if (!newPassword) {
+      toast.error('Please enter a new password');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error('New password must be at least 6 characters long');
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       toast.error('New passwords do not match');
       return;
     }
 
+    if (password === newPassword) {
+      toast.error('New password must be different from your temporary password');
+      return;
+    }
+
     try {
       setLoading(true);
-      const API_URL = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${API_URL}/api/auth/change-forced-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, newPassword })
+
+      const targetEmail = email || auth.currentUser?.email || '';
+      let firebaseUser = auth.currentUser;
+
+      // 1. Ensure user is authenticated with temporary password
+      if (!firebaseUser || (targetEmail && firebaseUser.email?.toLowerCase() !== targetEmail.toLowerCase())) {
+        try {
+          const cred = await signInWithEmailAndPassword(auth, targetEmail.trim(), password);
+          firebaseUser = cred.user;
+        } catch (signInErr: any) {
+          if (signInErr.code === 'auth/wrong-password' || signInErr.code === 'auth/invalid-credential') {
+            toast.error('The temporary password you entered is incorrect.');
+          } else if (signInErr.code === 'auth/too-many-requests') {
+            toast.error('Too many attempts. Please try again later.');
+          } else {
+            toast.error(signInErr.message || 'Authentication failed. Please verify your temporary password.');
+          }
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Reauthenticate existing session to verify temporary password
+        try {
+          const cred = EmailAuthProvider.credential(firebaseUser.email || targetEmail.trim(), password);
+          await reauthenticateWithCredential(firebaseUser, cred);
+        } catch (reauthErr: any) {
+          if (reauthErr.code === 'auth/wrong-password' || reauthErr.code === 'auth/invalid-credential') {
+            toast.error('The temporary password you entered is incorrect.');
+          } else {
+            toast.error(reauthErr.message || 'Verification of temporary password failed.');
+          }
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 2. Update password in Firebase Auth
+      await updatePassword(firebaseUser, newPassword);
+
+      // 3. Update Firestore user document to remove mustChangePassword
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      await updateDoc(userDocRef, {
+        mustChangePassword: false,
+        updatedAt: new Date().toISOString()
       });
 
-      const data = await response.json();
-      if (response.ok) {
-        localStorage.setItem('onereal_token', data.token);
-        toast.success('Password updated successfully! Welcome to ONEREAL.');
-        window.location.href = '/dashboard';
+      // 4. Update ID token cache if used
+      try {
+        const idToken = await firebaseUser.getIdToken(true);
+        localStorage.setItem('onereal_token', idToken);
+      } catch (_) {}
+
+      toast.success('Password updated successfully! Welcome to ONEREAL.');
+
+      // 5. Navigate to dashboard with fresh state
+      window.location.href = '/dashboard';
+    } catch (err: any) {
+      console.error('Password change error:', err);
+      if (err.code === 'auth/weak-password') {
+        toast.error('The new password is too weak. Please use at least 6 characters with a combination of letters and numbers.');
+      } else if (err.code === 'auth/requires-recent-login') {
+        toast.error('Session expired. Please log in again with your temporary password.');
+        navigate('/');
       } else {
-        toast.error(data.error || 'Failed to update password');
+        toast.error(err.message || 'An error occurred while updating your password.');
       }
-    } catch (err) {
-      toast.error('An error occurred');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleBackToLogin = () => {
+    logout();
+    navigate('/');
   };
 
   return (
@@ -81,7 +167,9 @@ export default function ChangePassword() {
             <GraduationCap className="w-8 h-8 text-primary" />
           </div>
           <h1 className="font-heading text-3xl font-bold text-foreground">Secure Your Account</h1>
-          <p className="text-muted-foreground mt-1 font-body text-sm">Your administrator has required a password update.</p>
+          <p className="text-muted-foreground mt-1 font-body text-sm">
+            {email ? `Updating credentials for ${email}` : 'Your administrator has required a password update.'}
+          </p>
         </div>
 
         <Card className="border-border shadow-xl overflow-hidden">
@@ -104,6 +192,7 @@ export default function ChangePassword() {
                     required 
                     placeholder="Enter current password"
                     className="pr-10"
+                    disabled={loading}
                   />
                   <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -119,8 +208,9 @@ export default function ChangePassword() {
                     value={newPassword} 
                     onChange={e => setNewPassword(e.target.value)} 
                     required 
-                    placeholder="Create a strong password"
+                    placeholder="Create a strong password (min 6 characters)"
                     className="pr-10"
+                    disabled={loading}
                   />
                   <button type="button" onClick={() => setShowNewPass(!showNewPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -154,6 +244,7 @@ export default function ChangePassword() {
                   onChange={e => setConfirmPassword(e.target.value)} 
                   required 
                   placeholder="Repeat your new password"
+                  disabled={loading}
                 />
               </div>
 
@@ -163,16 +254,32 @@ export default function ChangePassword() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full h-11 font-semibold mt-4" disabled={loading || !newPassword || newPassword !== confirmPassword}>
-                {loading ? 'Updating...' : 'Update Password & Login'}
+              <Button type="submit" className="w-full h-11 font-semibold mt-4 gap-2" disabled={loading || !newPassword || newPassword !== confirmPassword}>
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Updating Password...</span>
+                  </>
+                ) : (
+                  'Update Password & Login'
+                )}
               </Button>
             </form>
           </CardContent>
         </Card>
         
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          Contact your administrator if you've lost your temporary credentials.
-        </p>
+        <div className="text-center mt-6 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Contact your administrator if you've lost your temporary credentials.
+          </p>
+          <button 
+            type="button" 
+            onClick={handleBackToLogin} 
+            className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-medium"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Return to Login
+          </button>
+        </div>
       </div>
     </div>
   );

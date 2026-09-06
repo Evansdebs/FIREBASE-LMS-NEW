@@ -53,6 +53,10 @@ export default function DashboardLayout() {
 
   if (!isAuthenticated) return <Navigate to="/" replace />;
 
+  if (user?.mustChangePassword) {
+    return <Navigate to="/auth/change-password" state={{ email: user.email }} replace />;
+  }
+
   return (
     <div className="flex min-h-screen bg-background">
       {/* Dynamic Style Injection */}
